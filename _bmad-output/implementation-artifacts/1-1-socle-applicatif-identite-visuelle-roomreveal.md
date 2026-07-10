@@ -4,7 +4,7 @@ baseline_commit: NO_VCS
 
 # Story 1.1: Socle applicatif & identité visuelle RoomReveal
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -23,27 +23,27 @@ so that toutes les stories suivantes se construisent sur une base cohérente, br
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 : Initialiser le projet Next.js à la racine du repo (AC: 1)
-  - [ ] `create-next-app` avec Next.js 16.2.x, App Router, TypeScript, Tailwind CSS 4.3.x, `--src-dir`, sans ESLint config exotique (defaults). ⚠️ La racine `flux_test/` n'est pas vide (`_bmad/`, `_bmad-output/`, `docs/`, `test-assets/`) : `create-next-app` refuse les dossiers non standards → scaffolder dans un dossier temporaire (scratchpad) puis déplacer les fichiers générés à la racine du repo. Ne PAS créer de sous-dossier `roomreveal/` : `src/` vit à la racine du repo.
-  - [ ] `git init` + `.gitignore` Next.js standard (le repo n'est pas encore un dépôt git) ; ajouter `_bmad-output/` et `_bmad/` au `.gitignore` ? NON — les garder versionnés (artefacts de planning du projet). Commit initial après scaffold.
-  - [ ] Initialiser shadcn/ui via `npx shadcn@latest init` (style default, base color neutral, CSS variables) — mode dark UNIQUE : `<html class="dark">` en dur dans `src/app/layout.tsx`, aucun toggle, aucun mode clair.
-  - [ ] Créer les répertoires de couches avec un `.gitkeep` ou un fichier index minimal : `src/components/`, `src/state/`, `src/pipeline/`, `src/app/api/fal/proxy/`, `src/lib/` (AR-LAYERS).
-- [ ] Task 2 : Design tokens Tailwind 4 + shadcn (AC: 2)
-  - [ ] Dans `src/app/globals.css` (Tailwind 4 = config CSS-first via `@theme` / variables CSS) : définir les 12 couleurs de la palette comme tokens (`--color-fond-projection: #0B0D12`, etc.) ET mapper les variables shadcn du dark (`--background` → fond-projection, `--card` → surface-carte, `--popover`/surfaces élevées → surface-elevee, `--foreground` → texte-principal, `--muted-foreground` → texte-secondaire, `--border` → bordure, `--primary` → or-lumineux, `--primary-foreground` → or-lumineux-foreground). Tokens non listés = défauts dark shadcn (DESIGN.md).
-  - [ ] `--radius-lg: 12px` (cadres média) ; token d'espacement `--spacing-scene-gap: 48px`.
-  - [ ] Rôles typographiques en classes utilitaires ou variables : `display` (30px/600/1.2/-0.01em), `carton-titre` (13px/500/1.4/0.12em, `font-variant-caps: all-small-caps` ou `uppercase` + tracking), `attente` (16px/400/1.6). Geist Sans est fourni par `create-next-app` (package `geist`) — la conserver, pas d'autre fonte.
-- [ ] Task 3 : Layout applicatif (AC: 3, 5)
-  - [ ] `src/app/layout.tsx` : `<html lang="fr" class="dark">`, fond `fond-projection`, Geist Sans.
-  - [ ] `src/app/page.tsx` + composant shell dans `src/components/` : colonne centrée `max-w-5xl mx-auto`, bandeau fixe en haut (emplacement du futur Stepper — placeholder discret acceptable), zone « scène » centrale, emplacement action principale sous la scène aligné à droite. Pas de sidebar, pas de nav secondaire. Profondeur par ton, pas d'ombres.
-  - [ ] Pied de page : ligne discrète en `texte-secondaire` : « Vos photos sont supprimées automatiquement après 24 heures. »
-- [ ] Task 4 : Garde « écran trop petit » (AC: 4)
-  - [ ] Composant `src/components/` affichant plein écran « RoomReveal est conçu pour un écran d'ordinateur » quand `viewport width < 1024px` — CSS pur recommandé (media query : en dessous de 1024px masquer l'app et afficher le message ; pas de JS resize listener nécessaire). Aucune adaptation responsive du reste de l'UI.
-- [ ] Task 5 : Config env & lecture unique (AC: 6)
-  - [ ] Module serveur unique de config env (ex. `src/lib/env.ts` ou co-localisé côté serveur) : lit `process.env.FAL_KEY` une seule fois, exporté ; `server-only` import guard pour interdire l'import client. Créer `.env.local.example` documentant `FAL_KEY`. NE PAS créer le proxy fal (Story ultérieure) — seulement le répertoire `src/app/api/fal/proxy/` vide.
-- [ ] Task 6 : Vitest + test de fumée (AC: 6)
-  - [ ] Installer Vitest (+ `@vitejs/plugin-react`, environnement `jsdom` ou `happy-dom`, `@testing-library/react` optionnel pour le smoke test de rendu). Script `npm test`.
-  - [ ] Un test de fumée qui passe (ex. rendu du shell ou test trivial d'un util `lib/`).
-  - [ ] Vérifier `npm run lint`, `npx tsc --noEmit`, `npm test` et `npm run build` passent tous.
+- [x] Task 1 : Initialiser le projet Next.js à la racine du repo (AC: 1)
+  - [x] `create-next-app` avec Next.js 16.2.x, App Router, TypeScript, Tailwind CSS 4.3.x, `--src-dir`, sans ESLint config exotique (defaults). ⚠️ La racine `flux_test/` n'est pas vide (`_bmad/`, `_bmad-output/`, `docs/`, `test-assets/`) : `create-next-app` refuse les dossiers non standards → scaffolder dans un dossier temporaire (scratchpad) puis déplacer les fichiers générés à la racine du repo. Ne PAS créer de sous-dossier `roomreveal/` : `src/` vit à la racine du repo.
+  - [x] `git init` + `.gitignore` Next.js standard (le repo n'est pas encore un dépôt git) ; ajouter `_bmad-output/` et `_bmad/` au `.gitignore` ? NON — les garder versionnés (artefacts de planning du projet). Commit initial après scaffold.
+  - [x] Initialiser shadcn/ui via `npx shadcn@latest init` (style default, base color neutral, CSS variables) — mode dark UNIQUE : `<html class="dark">` en dur dans `src/app/layout.tsx`, aucun toggle, aucun mode clair.
+  - [x] Créer les répertoires de couches avec un `.gitkeep` ou un fichier index minimal : `src/components/`, `src/state/`, `src/pipeline/`, `src/app/api/fal/proxy/`, `src/lib/` (AR-LAYERS).
+- [x] Task 2 : Design tokens Tailwind 4 + shadcn (AC: 2)
+  - [x] Dans `src/app/globals.css` (Tailwind 4 = config CSS-first via `@theme` / variables CSS) : définir les 12 couleurs de la palette comme tokens (`--color-fond-projection: #0B0D12`, etc.) ET mapper les variables shadcn du dark (`--background` → fond-projection, `--card` → surface-carte, `--popover`/surfaces élevées → surface-elevee, `--foreground` → texte-principal, `--muted-foreground` → texte-secondaire, `--border` → bordure, `--primary` → or-lumineux, `--primary-foreground` → or-lumineux-foreground). Tokens non listés = défauts dark shadcn (DESIGN.md).
+  - [x] `--radius-lg: 12px` (cadres média) ; token d'espacement `--spacing-scene-gap: 48px`.
+  - [x] Rôles typographiques en classes utilitaires ou variables : `display` (30px/600/1.2/-0.01em), `carton-titre` (13px/500/1.4/0.12em, `font-variant-caps: all-small-caps` ou `uppercase` + tracking), `attente` (16px/400/1.6). Geist Sans est fourni par `create-next-app` (package `geist`) — la conserver, pas d'autre fonte.
+- [x] Task 3 : Layout applicatif (AC: 3, 5)
+  - [x] `src/app/layout.tsx` : `<html lang="fr" class="dark">`, fond `fond-projection`, Geist Sans.
+  - [x] `src/app/page.tsx` + composant shell dans `src/components/` : colonne centrée `max-w-5xl mx-auto`, bandeau fixe en haut (emplacement du futur Stepper — placeholder discret acceptable), zone « scène » centrale, emplacement action principale sous la scène aligné à droite. Pas de sidebar, pas de nav secondaire. Profondeur par ton, pas d'ombres.
+  - [x] Pied de page : ligne discrète en `texte-secondaire` : « Vos photos sont supprimées automatiquement après 24 heures. »
+- [x] Task 4 : Garde « écran trop petit » (AC: 4)
+  - [x] Composant `src/components/` affichant plein écran « RoomReveal est conçu pour un écran d'ordinateur » quand `viewport width < 1024px` — CSS pur recommandé (media query : en dessous de 1024px masquer l'app et afficher le message ; pas de JS resize listener nécessaire). Aucune adaptation responsive du reste de l'UI.
+- [x] Task 5 : Config env & lecture unique (AC: 6)
+  - [x] Module serveur unique de config env (ex. `src/lib/env.ts` ou co-localisé côté serveur) : lit `process.env.FAL_KEY` une seule fois, exporté ; `server-only` import guard pour interdire l'import client. Créer `.env.local.example` documentant `FAL_KEY`. NE PAS créer le proxy fal (Story ultérieure) — seulement le répertoire `src/app/api/fal/proxy/` vide.
+- [x] Task 6 : Vitest + test de fumée (AC: 6)
+  - [x] Installer Vitest (+ `@vitejs/plugin-react`, environnement `jsdom` ou `happy-dom`, `@testing-library/react` optionnel pour le smoke test de rendu). Script `npm test`.
+  - [x] Un test de fumée qui passe (ex. rendu du shell ou test trivial d'un util `lib/`).
+  - [x] Vérifier `npm run lint`, `npx tsc --noEmit`, `npm test` et `npm run build` passent tous.
 
 ## Dev Notes
 
@@ -108,8 +108,41 @@ src/lib/                # env.ts ; primitives pures ensuite
 
 ### Agent Model Used
 
+claude-fable-5 (Claude Fable 5)
+
 ### Debug Log References
+
+- Conflit peer npm : `@vitejs/plugin-react@6` (peerOptional babel 8 RC) vs package `shadcn@4.13` (babel 7, importé par le preset CSS `shadcn/tailwind.css`) → remplacé par `@vitejs/plugin-react-swc` (sans babel).
+- Testing Library : cleanup automatique entre tests exige `globals: true` dans `vitest.config.ts` (sinon double rendu et `getByText` échoue sur éléments multiples).
 
 ### Completion Notes List
 
+- Scaffold `create-next-app@16.2` réalisé en dossier temporaire puis déplacé à la racine (racine non vide) ; `git init` + commit initial inclus par le scaffold. Versions installées : Next.js 16.2.10, React 19.2.4, Tailwind CSS 4.3.2.
+- shadcn CLI 4.13 (nouvelles options) : init `-b radix -p nova` (preset Lucide/Geist), composants `button` et `tooltip` ajoutés. Le preset installe le package npm `shadcn` (source de `shadcn/tailwind.css`).
+- Mode dark unique : valeurs RoomReveal mappées directement dans `:root` (pas de bloc `.dark` séparé), `class="dark"` en dur sur `<html lang="fr">` pour les variantes `dark:` des composants shadcn.
+- Tokens : 12 couleurs + `--spacing-scene-gap` dans `@theme` (utilities `bg-fond-projection`, `text-texte-secondaire`, `pt-scene-gap`…) ; `--radius-lg: 12px` ; rôles typo en `@utility` (`text-display`, `text-carton-titre` en uppercase tracké, `text-attente`).
+- Shell wizard : `AppShell` (slots `stepper` / scène / `primaryAction` alignée à droite, footer confidentialité) + `ScreenTooSmall` en CSS pur (`max-lg`, seuil 1024 px). `page.tsx` affiche la promesse d'une ligne + placeholder de zone d'upload (remplacé en Story 1.3).
+- `src/lib/env.ts` : lecture unique de `FAL_KEY` derrière `import "server-only"` ; `.env.local.example` documenté. Répertoires de couches `src/state/`, `src/pipeline/`, `src/app/api/fal/proxy/` créés (`.gitkeep`).
+- Cycle TDD respecté : smoke tests écrits d'abord (RED sur le boilerplate), puis implémentation (GREEN). Validations finales : `npm test` (2/2), `npx tsc --noEmit`, `npm run lint`, `npm run build` tous OK. Vérification visuelle Playwright : rendu desktop 1280 px conforme (fond `#0B0D12`, colonne centrée, footer) et garde plein écran à 900 px.
+
 ### File List
+
+- `package.json`, `package-lock.json` (nouveau — scaffold + deps : `server-only`, `shadcn`, vitest & co)
+- `next.config.ts`, `tsconfig.json`, `postcss.config.mjs`, `eslint.config.mjs`, `next-env.d.ts`, `.gitignore` (nouveau — scaffold)
+- `components.json` (nouveau — config shadcn)
+- `vitest.config.ts` (nouveau)
+- `.env.local.example` (nouveau)
+- `src/app/globals.css` (modifié — tokens RoomReveal, dark unique, rôles typo)
+- `src/app/layout.tsx` (modifié — lang fr, dark, Geist Sans, metadata RoomReveal)
+- `src/app/page.tsx` (modifié — shell wizard + promesse + placeholder upload)
+- `src/app/page.test.tsx` (nouveau — smoke tests)
+- `src/components/app-shell.tsx` (nouveau)
+- `src/components/screen-too-small.tsx` (nouveau)
+- `src/components/ui/button.tsx`, `src/components/ui/tooltip.tsx` (nouveau — shadcn)
+- `src/lib/utils.ts` (nouveau — shadcn), `src/lib/env.ts` (nouveau)
+- `src/state/.gitkeep`, `src/pipeline/.gitkeep`, `src/app/api/fal/proxy/.gitkeep` (nouveau)
+- `public/*` (scaffold), `README.md`, `AGENTS.md`, `CLAUDE.md` (scaffold)
+
+## Change Log
+
+- 2026-07-10 : Story 1.1 implémentée — socle Next.js 16.2 + shadcn dark unique, tokens DESIGN.md, shell wizard, garde écran, env serveur, Vitest. Commit `2cfc08c`. Statut → review.
