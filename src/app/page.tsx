@@ -1,8 +1,9 @@
 import { AppShell } from "@/components/app-shell";
+import { Stepper } from "@/components/stepper";
 
 export default function HomePage() {
   return (
-    <AppShell>
+    <AppShell stepper={<Stepper />}>
       <section className="flex h-full flex-col items-center justify-center gap-scene-gap">
         <h1 className="text-display text-texte-principal">
           Une photo. Une pièce qui se meuble toute seule.

@@ -52,7 +52,7 @@ story_location: _bmad-output/implementation-artifacts
 development_status:
   epic-1: in-progress
   1-1-socle-applicatif-identite-visuelle-roomreveal: done
-  1-2-machine-a-etats-stepper-du-parcours: backlog
+  1-2-machine-a-etats-stepper-du-parcours: review
   1-3-etape-upload-depot-validation-normalisation: backlog
   1-4-infrastructure-transverse-attente-erreur: backlog
   epic-1-retrospective: optional
