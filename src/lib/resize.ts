@@ -50,8 +50,9 @@ export async function resizeToCanonicalJpeg(file: File): Promise<Blob> {
       bitmap.height,
     );
     const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
+    // Guard against a zero dimension from an extreme aspect ratio (round-to-0).
+    canvas.width = Math.max(1, width);
+    canvas.height = Math.max(1, height);
     const ctx = canvas.getContext("2d");
     if (ctx === null) {
       throw new Error("2D canvas context unavailable");

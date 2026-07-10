@@ -4,6 +4,7 @@ import { UploadZone } from "./upload-zone";
 import { Stepper } from "./stepper";
 import { GenerationProvider } from "@/state/generation-context";
 import { UPLOAD_MESSAGES } from "@/lib/validate-upload";
+import { resizeToCanonicalJpeg } from "@/lib/resize";
 
 // Canvas is unavailable in jsdom — mock the browser-only resize primitive.
 vi.mock("@/lib/resize", async (importOriginal) => {
@@ -49,5 +50,21 @@ describe("UploadZone (FR-1/2/3, AC1/2/4)", () => {
         screen.getByText("Masque").closest("button")?.getAttribute("aria-current"),
       ).toBe("step");
     });
+  });
+
+  it("shows the unusable message when the image cannot be decoded (corruption path)", async () => {
+    vi.mocked(resizeToCanonicalJpeg).mockRejectedValueOnce(
+      new Error("decode failed"),
+    );
+    renderWithParcours();
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [fileOfType("image/jpeg")] } });
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe(UPLOAD_MESSAGES.unusable);
+    // Still on Upload — no advance happened.
+    expect(
+      screen.getByText("Upload").closest("button")?.getAttribute("aria-current"),
+    ).toBe("step");
   });
 });

@@ -16,15 +16,18 @@ import { cn } from "@/lib/utils";
 export function UploadZone() {
   const { dispatch } = useGeneration();
   const inputRef = useRef<HTMLInputElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
 
   async function handleFile(file: File) {
+    if (busy) return; // reject re-entry while a resize is in flight
     setError(null);
     const validation = validateUploadFile(file);
     if (!validation.ok) {
       setError(validation.message);
+      buttonRef.current?.focus(); // keep the retry trigger reachable (FR-3, keyboard)
       return;
     }
     setBusy(true);
@@ -34,28 +37,33 @@ export function UploadZone() {
       dispatch({ type: "PHOTO_NORMALIZED", photo: { blob } });
     } catch {
       setError(UPLOAD_MESSAGES.unusable);
+      buttonRef.current?.focus();
     } finally {
       setBusy(false);
     }
   }
 
   function openPicker() {
+    if (busy) return;
     inputRef.current?.click();
   }
 
   return (
     <div className="w-full">
       <button
+        ref={buttonRef}
         type="button"
+        disabled={busy}
         onClick={openPicker}
         onDragOver={(e) => {
           e.preventDefault();
-          setDragOver(true);
+          if (!busy) setDragOver(true);
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={(e) => {
           e.preventDefault();
           setDragOver(false);
+          if (busy) return;
           const file = e.dataTransfer.files[0];
           if (file) void handleFile(file);
         }}
@@ -82,7 +90,8 @@ export function UploadZone() {
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file) void handleFile(file);
-          e.target.value = ""; // allow re-selecting the same file after an error
+          // Always reset so the same filename can be re-selected after a rejection.
+          e.target.value = "";
         }}
       />
 

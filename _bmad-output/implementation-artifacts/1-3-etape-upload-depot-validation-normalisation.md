@@ -4,7 +4,7 @@ baseline_commit: 308acc1
 
 # Story 1.3: Étape Upload — dépôt, validation & normalisation
 
-Status: review
+Status: done
 
 ## Story
 
@@ -134,3 +134,23 @@ claude-fable-5 (Claude Fable 5)
 ## Change Log
 
 - 2026-07-11 : Story 1.3 implémentée — primitives resize/validation pures, UploadZone (drag-drop, validation FR, normalisation canonique AD-2, avance à Masque). 34 tests verts. Resize réel vérifié Chromium. Statut → review.
+- 2026-07-11 : Revue adversariale (3 couches). 5 correctifs, 35 tests verts, story → done.
+
+## Senior Developer Review (AI)
+
+**Date :** 2026-07-11 · **Résultat :** Approuvé après corrections · **Verdict ACs :** AC1–AC4 PASS, AC5 PARTIAL (Chrome vérifié ; Firefox/Safari différés — E2E multi-navigateur différé v1 par la spine).
+
+### Action Items
+
+- [x] **[Moyen]** Le contrôle n'était pas désactivé pendant `busy` (UX-DR15 « état désactivé du contrôle concerné ») → `disabled={busy}`, garde de ré-entrée dans `handleFile`/`openPicker`, drop/dragOver ignorés pendant la préparation (F1 Auditor + Edge + Blind : uploads concurrents / double dispatch).
+- [x] **[Bas]** Dimensions canvas potentiellement nulles sur ratio extrême → `Math.max(1, …)` (Edge).
+- [x] **[Bas]** Retour du focus sur le déclencheur après une erreur (FR-3 « réessai immédiat » au clavier) (Blind a11y).
+- [x] **[Bas]** Chemin corruption non testé (resize mocké toujours en succès) → test ajouté : resize qui rejette → message « inexploitable », pas d'avance (Blind test gap).
+- [x] **[Bas]** Commentaire trompeur sur le reset conditionnel de l'input → clarifié (reset inconditionnel) (Blind).
+
+### Écartés / Différés
+
+- **Stocker les dimensions canoniques dans `OriginalPhoto`** (Blind) : différé Epic 2 — le blob EST la photo canonique, les dims sont re-dérivables au décodage d'affichage ; élargir le type `OriginalPhoto` (contrat story 1.2) est prématuré (YAGNI).
+- **Test E2E committé du resize réel** (Blind) : l'automatisation E2E est explicitement différée v1 par la spine ; vérif Playwright faite et documentée (Chromium).
+- Placeholder générique `ParcoursScene` pour mask/emptyRoom/video : intentionnel (surfaces hors périmètre Epic 1).
+- Drop multi-fichiers / dossier / fichier 0 octet / MIME vide : dégradation gracieuse existante (validation format ou échec de décodage → message clair).
