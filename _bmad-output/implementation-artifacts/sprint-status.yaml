@@ -54,7 +54,7 @@ development_status:
   1-1-socle-applicatif-identite-visuelle-roomreveal: done
   1-2-machine-a-etats-stepper-du-parcours: done
   1-3-etape-upload-depot-validation-normalisation: done
-  1-4-infrastructure-transverse-attente-erreur: backlog
+  1-4-infrastructure-transverse-attente-erreur: review
   epic-1-retrospective: optional
   epic-2: backlog
   epic-2-retrospective: optional
