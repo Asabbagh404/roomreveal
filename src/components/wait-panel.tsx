@@ -7,7 +7,7 @@ import { WAIT_PHASE_ORDER } from "@/state/types";
 import { LONG_WAIT_MS, waitPhaseLabel } from "./wait-copy";
 
 function formatElapsed(ms: number): string {
-  const total = Math.floor(ms / 1000);
+  const total = Math.max(0, Math.floor(ms / 1000)); // guard clock skew / NaN
   const min = Math.floor(total / 60);
   const sec = total % 60;
   return min > 0 ? `${min} min ${sec} s` : `${sec} s`;
@@ -39,6 +39,9 @@ export function WaitPanel() {
   // Discrete: (index+1)/total — a named milestone, not a time ratio.
   const value = ((phaseIndex + 1) / WAIT_PHASE_ORDER.length) * 100;
   const isVideo = state.step === "video";
+  // "1 à 3 minutes" is the promise; LONG_WAIT_MS (3 min 30) adds a 30 s grace
+  // before the reassurance line, so it only shows once we're genuinely past
+  // the promised ceiling (UX-DR11).
   const tooLong = elapsed >= LONG_WAIT_MS;
 
   return (
@@ -51,8 +54,9 @@ export function WaitPanel() {
           Votre Révélation se prépare — comptez 1 à 3 minutes.
         </p>
       )}
-      {/* Indicator uses --primary, mapped to or-lumineux — gold bar by default. */}
-      <Progress value={value} className="mt-4" />
+      {/* Indicator uses --primary (or-lumineux). Override the track to bordure so
+          the unfilled portion is visible against the surface-elevee panel. */}
+      <Progress value={value} className="mt-4 bg-bordure" />
       <p className="mt-2 text-sm text-texte-secondaire">{formatElapsed(elapsed)}</p>
       {tooLong && (
         <p aria-live="polite" className="mt-2 text-sm text-texte-secondaire">

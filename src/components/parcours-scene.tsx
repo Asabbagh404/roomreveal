@@ -14,20 +14,31 @@ import { ErrorBanner } from "@/components/error-banner";
 export function ParcoursScene() {
   const { state, dispatch } = useGeneration();
 
+  // An error ends any wait (the reducer clears waitPhase on SET_ERROR); render
+  // one transverse overlay at a time, error taking precedence.
+  const overlay =
+    state.error !== undefined ? (
+      <ErrorBanner
+        message={state.error.userMessage}
+        variant="error"
+        step={state.error.step}
+        onRetry={() => dispatch({ type: "CLEAR_ERROR" })}
+      />
+    ) : state.waitPhase !== undefined ? (
+      // key={epoch} remounts the panel per attempt so the elapsed timer resets.
+      <WaitPanel key={state.epoch} />
+    ) : null;
+
   return (
-    <section className="flex h-full flex-col items-center justify-center gap-scene-gap">
+    <section className="relative flex h-full flex-col items-center justify-center gap-scene-gap">
       <StepSurface />
 
-      {/* Transverse overlays — artifacts stay visible behind them (AC3). */}
-      {/* key={epoch} remounts the panel per attempt so the elapsed timer resets. */}
-      {state.waitPhase !== undefined && <WaitPanel key={state.epoch} />}
-      {state.error !== undefined && (
-        <ErrorBanner
-          message={state.error.userMessage}
-          variant="error"
-          step={state.error.step}
-          onRetry={() => dispatch({ type: "CLEAR_ERROR" })}
-        />
+      {/* Transverse overlay floats above the scene so acquired artifacts stay
+          visible behind it (AC3). */}
+      {overlay !== null && (
+        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 px-6">
+          {overlay}
+        </div>
       )}
     </section>
   );

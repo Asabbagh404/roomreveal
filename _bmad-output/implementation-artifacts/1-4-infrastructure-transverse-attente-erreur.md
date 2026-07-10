@@ -4,7 +4,7 @@ baseline_commit: fe764f9
 
 # Story 1.4: Infrastructure transverse d'attente & d'erreur
 
-Status: review
+Status: done
 
 ## Story
 
@@ -140,5 +140,28 @@ claude-fable-5 (Claude Fable 5)
 ## Change Log
 
 - 2026-07-11 : Story 1.4 implémentée — Panneau d'attente (phases nommées AD-14, temps écoulé, seuil 3 min 30), Bandeau d'erreur (erreur/neutre, AD-8), Bouton de Génération canonique (UX-DR13), overlays branchés. 47 tests verts. Statut → review.
+- 2026-07-11 : Revue adversariale (3 couches, AC1–AC5 tous PASS). 7 correctifs, 48 tests verts, story → done.
+
+## Senior Developer Review (AI)
+
+**Date :** 2026-07-11 · **Résultat :** Approuvé après corrections · **Verdict ACs :** AC1–AC5 tous PASS (Acceptance Auditor).
+
+### Action Items
+
+- [x] **[Moyen]** `ErrorBanner` : props `step`/`onRetry` optionnelles → un bandeau d'erreur sans action était constructible → **union discriminée** : la variante `error` exige `step`+`onRetry` au type (Edge + Blind ; garantit l'action unique AD-8).
+- [x] **[Moyen]** Barre de progression invisible : track `bg-muted` = fond panneau `surface-elevee` → track forcé à `bg-bordure` (contraste) (Blind).
+- [x] **[Moyen]** Overlays rendus en siblings flex (poussaient la scène) → vraie **superposition** absolue au-dessus de la scène (`relative`/`absolute`), artefacts visibles derrière (F1 Auditor / AC3).
+- [x] **[Bas]** Exclusion mutuelle wait/error dans la scène (l'erreur prime ; le reducer efface déjà `waitPhase` sur `SET_ERROR`) (Edge + Blind).
+- [x] **[Bas]** Garde `Math.max(0, …)` sur le temps écoulé (clock skew / NaN) (Edge).
+- [x] **[Bas]** Commentaire justifiant le buffer de 30 s entre « 1 à 3 min » (promesse) et le message 3 min 30 (Blind).
+- [x] **[Bas]** Tests ajoutés : temps écoulé qui progresse (« 1 min 15 s »), trigger tooltip focusable du bouton désactivé (Blind test gaps).
+
+### Écartés / Différés
+
+- **`queued`/`generating` → même libellé** : collapse volontaire des 4 valeurs `WaitPhase` vers les 3 phases nommées d'EXPERIENCE.md (« Envoi » → « Génération de la Révélation » → « Finalisation »). Conforme (Auditor confirme).
+- **Variante neutre & `GenerationButton` câblés nulle part** : infrastructure en avance, consommée par les surfaces d'Epic 2+ (FR-16, UX-DR13) — explicitement dans le périmètre de cette story d'infra.
+- **`onRetry` = `CLEAR_ERROR`** : aucune étape ne produit d'erreur en Epic 1 (pas de pipeline) ; la ré-exécution réelle vit dans `effects.ts` (Epic 2, AD-12). Placeholder honnête documenté.
+- **Reset timer par attempt testé via remontage `key`** : garantie React standard ; le comptage lui-même est désormais testé.
+- `overflow-x-hidden` du Progress : code shadcn généré, hors périmètre. `>=` vs « plus de » : immatériel (Auditor F4).
 
 ## Change Log

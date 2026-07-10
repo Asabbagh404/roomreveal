@@ -11,19 +11,28 @@ const RETRY_LABEL: Record<PipelineStep, string> = {
   video: "Relancer la vidéo",
 };
 
-interface ErrorBannerProps {
-  /** French user message (AD-8 userMessage), or the neutral "no furniture" line. */
-  message: string;
-  /**
-   * "error" → red left rule + single retry action + assertive alert (FR-17).
-   * "neutral" → "aucun meuble détecté": informational, not an error (AC4/FR-16).
-   */
-  variant: "error" | "neutral";
-  /** Pipeline step to retry (error variant only) — drives the single action label. */
-  step?: PipelineStep;
-  /** Retry handler (error variant). Real re-run lives in effects.ts (Epic 2+). */
-  onRetry?: () => void;
-}
+/**
+ * Discriminated union: the error variant MUST carry the step + retry handler
+ * (AD-8 mandates a single retry action), so an action-less error banner cannot
+ * be constructed. The neutral variant carries neither.
+ */
+type ErrorBannerProps =
+  | {
+      variant: "error";
+      /** French user message (AD-8 userMessage). */
+      message: string;
+      /** Pipeline step to retry — drives the single action label. */
+      step: PipelineStep;
+      /** Retry handler. Real re-run lives in effects.ts (Epic 2+). */
+      onRetry: () => void;
+    }
+  | {
+      variant: "neutral";
+      /** Informational line ("aucun meuble détecté", AC4/FR-16). */
+      message: string;
+      step?: never;
+      onRetry?: never;
+    };
 
 /**
  * Bandeau d'erreur (UX-DR12). Renders a single French message and, for real
@@ -31,8 +40,8 @@ interface ErrorBannerProps {
  * The "aucun meuble détecté" case is a neutral variant, not an error (AC4).
  * Overlays the scene without hiding already-acquired artifacts (AC3).
  */
-export function ErrorBanner({ message, variant, step, onRetry }: ErrorBannerProps) {
-  const isError = variant === "error";
+export function ErrorBanner(props: ErrorBannerProps) {
+  const isError = props.variant === "error";
   return (
     <div
       role={isError ? "alert" : "status"}
@@ -43,11 +52,11 @@ export function ErrorBanner({ message, variant, step, onRetry }: ErrorBannerProp
       )}
     >
       <p className={cn("text-sm", isError ? "text-texte-principal" : "text-texte-secondaire")}>
-        {message}
+        {props.message}
       </p>
-      {isError && step && onRetry && (
-        <Button variant="outline" onClick={onRetry}>
-          {RETRY_LABEL[step]}
+      {props.variant === "error" && (
+        <Button variant="outline" onClick={props.onRetry}>
+          {RETRY_LABEL[props.step]}
         </Button>
       )}
     </div>

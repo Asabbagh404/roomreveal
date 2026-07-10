@@ -41,5 +41,13 @@ describe("WaitPanel (FR-14, UX-DR11)", () => {
       });
       expect(screen.getByText(/plus long que prévu/)).toBeDefined();
     });
+
+    it("shows an elapsed time that increases as the wait continues", () => {
+      seed({ step: "video", epoch: 1, waitPhase: "generating" });
+      act(() => {
+        vi.advanceTimersByTime(75_000); // 1 min 15 s
+      });
+      expect(screen.getByText("1 min 15 s")).toBeDefined();
+    });
   });
 });
