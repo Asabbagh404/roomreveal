@@ -4,7 +4,7 @@ baseline_commit: NO_VCS
 
 # Story 1.1: Socle applicatif & identité visuelle RoomReveal
 
-Status: review
+Status: done
 
 ## Story
 
@@ -146,3 +146,31 @@ claude-fable-5 (Claude Fable 5)
 ## Change Log
 
 - 2026-07-10 : Story 1.1 implémentée — socle Next.js 16.2 + shadcn dark unique, tokens DESIGN.md, shell wizard, garde écran, env serveur, Vitest. Commit `2cfc08c`. Statut → review.
+- 2026-07-11 : Revue de code adversariale (Blind Hunter + Edge Case Hunter + Acceptance Auditor). 4 findings corrigés, story → done.
+
+## Senior Developer Review (AI)
+
+**Date :** 2026-07-11 · **Résultat :** Approuvé après corrections · **Verdict ACs :** AC1–AC6 tous PASS (Acceptance Auditor).
+
+3 couches adversariales lancées en parallèle. Après triage (sévérité recalibrée au contexte réel) : 4 findings retenus et corrigés, le reste écarté (faux positifs / conformes au spec) ou différé (consommateur dans une story ultérieure).
+
+### Action Items
+
+- [x] **[Moyen]** `.env.local.example` gitignoré (`.gitignore .env*`) → ajout de `!.env.local.example` + fichier committé (Auditor + Blind).
+- [x] **[Moyen]** `--font-sans: var(--font-sans)` auto-référentiel → variable next/font renommée `--font-geist-sans`, mappée dans `@theme inline` (pattern shadcn) (Edge + Blind).
+- [x] **[Bas]** `package-lock.json` désynchronisé (`name: roomreveal-scaffold`) → `npm install`, nom corrigé en `roomreveal` (Blind).
+- [x] **[Bas]** SVG orphelins dans `public/` (aucune référence) → `next/vercel/file/globe/window.svg` supprimés (Edge).
+
+### Écartés (faux positifs / conformes au spec)
+
+- Tokens `succes`/`erreur` « morts » → AC2 exige les 12 tokens ; DESIGN.md précise que `erreur` ne remplace pas `destructive` shadcn.
+- Double vocabulaire de tokens (brand vs sémantique) → source unique, les tokens sémantiques mappent vers les tokens brand.
+- `class="dark"` + valeurs dark dans `:root` → dark-only intentionnel (UX-DR1) ; `class="dark"` requis par les variantes `dark:` des composants shadcn.
+- `.gitkeep` des couches → AC1/AR-LAYERS exige `state/`, `pipeline/`, `api/fal/proxy/`.
+- Footer « 24 heures » → exigé par AC5/UX-DR16/NFR-4 (purge fal TTL câblée en story aval, AD-9).
+- sticky vs fixed, preset shadcn, branches falsy ReactNode théoriques → sans impact réel.
+
+### Différés (réels, story ultérieure)
+
+- **Validation fail-fast de `FAL_KEY`** → aucun consommateur avant la story proxy ; un throw au chargement casserait toutes les pages de la story 1.1. À câbler avec le proxy `/api/fal/proxy` (AD-4).
+- **Couverture du breakpoint 1024 px** → jsdom n'applique pas le CSS ; les tests E2E du Parcours sont explicitement différés v1 par la spine. Garde vérifiée manuellement via Playwright (900 px → message plein écran).
