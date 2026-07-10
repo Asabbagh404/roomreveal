@@ -1,6 +1,5 @@
 import {
   type Generation,
-  type MaskDraft,
   type OriginalPhoto,
   type Step,
   type StepError,
@@ -62,19 +61,27 @@ export function generationReducer(
 ): Generation {
   switch (action.type) {
     case "PHOTO_NORMALIZED":
-      // Setting a new photo starts a fresh attempt at the mask step.
+      // A new photo is a fresh Generation attempt: every downstream artifact
+      // that belonged to the previous photo is now stale and must be dropped
+      // (AD-11), and the epoch is bumped so any in-flight prior job is discarded
+      // (AD-12). Only originalPhoto survives, at the mask step.
       return {
         ...state,
+        ...invalidateDownstream(state, "upload"),
         originalPhoto: action.photo,
+        maskDraft: undefined,
         step: "mask",
+        epoch: state.epoch + 1,
         error: undefined,
         waitPhase: undefined,
       };
 
     case "GO_TO_STEP":
       // Back (or same) navigation only: never advance, never touch artifacts.
+      // Clear transient per-attempt fields (error, waitPhase) — a preserved
+      // waitPhase would otherwise make AD-14 monotonicity reject the next attempt.
       if (stepIndex(action.step) > stepIndex(state.step)) return state;
-      return { ...state, step: action.step, error: undefined };
+      return { ...state, step: action.step, error: undefined, waitPhase: undefined };
 
     case "CONFIRM_ADVANCE_FROM": {
       const next = { ...state, ...invalidateDownstream(state, action.step) };
@@ -111,5 +118,3 @@ export function generationReducer(
       return state;
   }
 }
-
-export type { Generation, MaskDraft };

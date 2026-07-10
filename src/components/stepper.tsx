@@ -76,7 +76,6 @@ export function Stepper() {
                 type="button"
                 disabled={isInert}
                 aria-current={isCurrent ? "step" : undefined}
-                aria-disabled={isInert || undefined}
                 onClick={() => {
                   if (isBehind) {
                     dispatch({ type: "GO_TO_STEP", step });

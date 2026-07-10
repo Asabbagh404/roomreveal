@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Stepper, hasDownstreamArtifacts, isReachableAhead } from "./stepper";
 import { GenerationProvider } from "@/state/generation-context";
@@ -28,6 +28,54 @@ describe("Stepper rendering (AC4)", () => {
     // Masque/Pièce vide/Vidéo are future & inert at the initial state.
     const video = screen.getByText("Vidéo").closest("button");
     expect(video?.hasAttribute("disabled")).toBe(true);
+  });
+});
+
+describe("Stepper re-advance confirmation (AC3)", () => {
+  // User went back to "mask" while emptyRoom + reveal (downstream) still exist.
+  const wentBack: Generation = {
+    step: "mask",
+    epoch: 1,
+    originalPhoto: { blob: new Blob(["p"]) },
+    mask: "fal://mask",
+    emptyRoom: "fal://empty",
+    reveal: "fal://reveal",
+  };
+
+  it("opens the confirmation Dialog when re-advancing would discard artifacts", () => {
+    render(
+      <GenerationProvider initialState={wentBack}>
+        <Stepper />
+      </GenerationProvider>,
+    );
+    // "Pièce vide" is ahead of current (mask) but still reachable (emptyRoom present).
+    fireEvent.click(screen.getByText("Pièce vide").closest("button")!);
+    expect(screen.getByText("Continuer le Parcours ?")).toBeDefined();
+  });
+
+  it("Annuler closes the Dialog without advancing (still at mask)", () => {
+    render(
+      <GenerationProvider initialState={wentBack}>
+        <Stepper />
+      </GenerationProvider>,
+    );
+    fireEvent.click(screen.getByText("Pièce vide").closest("button")!);
+    fireEvent.click(screen.getByText("Annuler"));
+    // aria-current stays on the mask step — no advance happened.
+    expect(screen.getByText("Masque").closest("button")?.getAttribute("aria-current")).toBe("step");
+  });
+
+  it("Continuer advances to the reopened step and invalidates downstream (reveal gone)", () => {
+    render(
+      <GenerationProvider initialState={wentBack}>
+        <Stepper />
+      </GenerationProvider>,
+    );
+    fireEvent.click(screen.getByText("Pièce vide").closest("button")!);
+    fireEvent.click(screen.getByText("Continuer"));
+    // Now at emptyRoom; "Vidéo" is a future inert step again (reveal invalidated).
+    expect(screen.getByText("Pièce vide").closest("button")?.getAttribute("aria-current")).toBe("step");
+    expect(screen.getByText("Vidéo").closest("button")?.hasAttribute("disabled")).toBe(true);
   });
 });
 

@@ -4,7 +4,7 @@ baseline_commit: c1468df1c4ed4775e834d665792399baf81a48f4
 
 # Story 1.2: Machine à états & Stepper du Parcours
 
-Status: review
+Status: done
 
 ## Story
 
@@ -136,3 +136,25 @@ claude-fable-5 (Claude Fable 5)
 ## Change Log
 
 - 2026-07-11 : Story 1.2 implémentée — types domaine, reducer pur (AD-11/AD-12/AD-14/AD-8), contexte React, Stepper (UX-DR5/UX-DR18) + Dialog. 16 tests verts. Statut → review.
+- 2026-07-11 : Revue adversariale (3 couches). 6 correctifs, 21 tests verts, story → done.
+
+## Senior Developer Review (AI)
+
+**Date :** 2026-07-11 · **Résultat :** Approuvé après corrections · **Verdict ACs :** AC1–AC4 tous PASS (Acceptance Auditor).
+
+### Action Items
+
+- [x] **[Moyen]** `PHOTO_NORMALIZED` laissait `mask/emptyRoom/reveal/maskDraft` périmés sans bump d'epoch → invalide désormais l'aval + `epoch++` (une nouvelle photo = nouvelle tentative, AD-11/AD-12). Test ajouté (Edge + Blind + Auditor).
+- [x] **[Moyen]** `GO_TO_STEP` ne nettoyait pas `waitPhase` → la monotonie « par tentative » (AD-14) devenait fragile ; nettoyage ajouté + test (Blind).
+- [x] **[Bas]** Re-export `Generation`/`MaskDraft` depuis `reducer.ts` (double chemin d'import) → retiré, source unique `types.ts` (Blind).
+- [x] **[Bas]** Test d'immutabilité auto-défaisant (`JSON.stringify` masque les `undefined`) → réécrit avec `Object.freeze` + assertions de champs (Blind).
+- [x] **[Bas]** `aria-disabled` redondant avec `disabled` natif sur le stepper → retiré (Blind).
+- [x] **[Bas]** Interaction Dialog non testée (cœur AC3) → 3 tests ajoutés (ouverture, Annuler no-op, Continuer avance + invalide l'aval) via seed `initialState` du provider ; avertissement Vitest `vite-tsconfig-paths` supprimé (option native).
+
+### Écartés / Différés
+
+- Finding Edge « CONFIRM_ADVANCE_FROM sans garde arrière » : **contresens** — l'action est un mouvement avant par design (ré-entrée d'une étape aval encore accomplie) ; une garde arrière la casserait. Écarté.
+- Copie du Dialog « overstate » (Blind) : l'Auditor confirme la conformité (aval invalidé = « étapes après celle-ci remplacées »). Écarté.
+- Saut d'étape avec trou d'artefacts (Blind) : impossible, les artefacts sont produits dans l'ordre. Écarté.
+- `SET_ERROR` ne route pas via `PIPELINE_STEP_TO_PARCOURS` : table domaine consommée par la story 1.4 (Bandeau d'erreur). Différé.
+- Provider monté à la racine : app mono-page (le wizard EST la page). Écarté.

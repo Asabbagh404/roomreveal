@@ -21,10 +21,16 @@ const GenerationContext = createContext<GenerationContextValue | null>(null);
  */
 export function GenerationProvider({
   children,
+  initialState,
 }: {
   children: React.ReactNode;
+  /** Seed the reducer with a specific state (tests / future rehydration). */
+  initialState?: Generation;
 }) {
-  const [state, dispatch] = useReducer(generationReducer, initialGeneration);
+  const [state, dispatch] = useReducer(
+    generationReducer,
+    initialState ?? initialGeneration,
+  );
   return (
     <GenerationContext.Provider value={{ state, dispatch }}>
       {children}

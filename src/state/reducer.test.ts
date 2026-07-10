@@ -30,6 +30,29 @@ describe("generationReducer (pure, no mocks)", () => {
     expect(next.step).toBe("mask");
   });
 
+  it("PHOTO_NORMALIZED on a re-upload drops stale downstream artifacts and bumps epoch (AD-11/AD-12)", () => {
+    const state = fullGeneration();
+    const photo = { blob: new Blob(["new"]) };
+    const next = generationReducer(state, { type: "PHOTO_NORMALIZED", photo });
+    expect(next.originalPhoto).toBe(photo);
+    expect(next.step).toBe("mask");
+    expect(next.epoch).toBe(3); // was 2
+    expect(next.maskDraft).toBeUndefined();
+    expect(next.mask).toBeUndefined();
+    expect(next.emptyRoom).toBeUndefined();
+    expect(next.reveal).toBeUndefined();
+  });
+
+  it("GO_TO_STEP clears a stale waitPhase so the next attempt is not blocked (AD-14)", () => {
+    const state: Generation = {
+      step: "video",
+      epoch: 1,
+      waitPhase: "generating",
+    };
+    const next = generationReducer(state, { type: "GO_TO_STEP", step: "mask" });
+    expect(next.waitPhase).toBeUndefined();
+  });
+
   it("GO_TO_STEP backwards preserves ALL artifacts (FR-15, AD-11)", () => {
     const state = fullGeneration();
     const next = generationReducer(state, { type: "GO_TO_STEP", step: "mask" });
@@ -111,9 +134,18 @@ describe("generationReducer (pure, no mocks)", () => {
   });
 
   it("does not mutate the input state (immutability)", () => {
-    const state = fullGeneration();
-    const snapshot = JSON.stringify({ ...state, originalPhoto: "blob" });
-    generationReducer(state, { type: "CONFIRM_ADVANCE_FROM", step: "mask" });
-    expect(JSON.stringify({ ...state, originalPhoto: "blob" })).toBe(snapshot);
+    // Object.freeze makes any in-place write throw in strict mode, so a mutating
+    // reducer fails hard instead of silently passing (JSON.stringify drops the
+    // undefined fields the invalidation sets, hiding mutations).
+    const state = Object.freeze(fullGeneration());
+    const next = generationReducer(state, {
+      type: "CONFIRM_ADVANCE_FROM",
+      step: "mask",
+    });
+    expect(next).not.toBe(state);
+    // Original still carries its downstream artifacts unchanged.
+    expect(state.emptyRoom).toBe("fal://empty");
+    expect(state.reveal).toBe("fal://reveal");
+    expect(state.epoch).toBe(2);
   });
 });
