@@ -1,0 +1,410 @@
+<!-- Mock indicatif — DESIGN.md et EXPERIENCE.md font foi en cas de conflit. -->
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>RoomReveal — Étape 4 : Vidéo / Révélation (mock, 2 états)</title>
+<style>
+/* ============================================================
+   Sections de spine gouvernant cet écran :
+   DESIGN.md      — Colors, Typography (display, carton-titre, attente),
+                    Layout & Spacing (scene-gap, max-w-5xl, action à droite),
+                    Shapes (rounded.lg cadres média),
+                    Elevation & Depth (lueur or ≤ 8 %, blur ≥ 40 px, Révélation uniquement),
+                    Components : Stepper du Parcours, Panneau d'attente,
+                    Cartes de comparaison, Lecteur de la Révélation,
+                    Bouton de Génération.
+   EXPERIENCE.md  — Attente & Progression (phases nommées, temps écoulé,
+                    avant/après contemplable, « 1 à 3 minutes ») ;
+                    State Patterns (Attente longue, Succès Révélation prête) ;
+                    Component Patterns (Lecteur de la Révélation) ;
+                    Voice and Tone ; Cycle de vie de la Génération ;
+                    Flow 1 étapes 5–7.
+   Tous les tokens ci-dessous proviennent du frontmatter DESIGN.md.
+   Les bandeaux « ÉTAT … » sont des annotations de mock, pas de l'UI produit.
+   ============================================================ */
+:root{
+  --fond-projection:#0B0D12;
+  --surface-carte:#141821;
+  --surface-elevee:#1B2130;
+  --texte-principal:#EDEFF4;
+  --texte-secondaire:#98A2B3;
+  --bordure:#252C3B;
+  --or-lumineux:#F2C14E;
+  --or-lumineux-foreground:#1A1305;
+  --rounded-lg:12px;
+  --scene-gap:48px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:var(--fond-projection);
+  color:var(--texte-principal);
+  font-family:"Geist Sans","Geist",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:14px;line-height:1.5;
+}
+/* ---- Annotation de mock (hors UI produit) ---- */
+.mock-divider{
+  max-width:1024px;margin:56px auto;
+  display:flex;align-items:center;gap:16px;
+  color:var(--texte-secondaire);
+  font-size:12px;font-weight:500;letter-spacing:0.14em;text-transform:uppercase;
+}
+.mock-divider::before,.mock-divider::after{
+  content:"";flex:1;border-top:1px dashed var(--bordure);
+}
+/* ---- Stepper du Parcours ---- */
+.stepper{
+  background:var(--fond-projection);
+  border-bottom:1px solid var(--bordure);
+  padding:16px 40px;
+}
+.stepper-inner{max-width:1024px;margin:0 auto;display:flex;align-items:center;gap:12px}
+.step{display:flex;align-items:center;gap:10px;flex:none}
+.step-dot{
+  width:28px;height:28px;border-radius:9999px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:500;flex:none;
+}
+.step-label{
+  font-size:13px;font-weight:500;letter-spacing:0.12em;line-height:1.4;
+  text-transform:uppercase;white-space:nowrap;
+}
+.step--done .step-dot{background:var(--surface-carte);border:1px solid var(--bordure);color:var(--texte-principal)}
+.step--done .step-label{color:var(--texte-principal)}
+.step--done{cursor:pointer}
+.step--active .step-dot{background:var(--or-lumineux);color:var(--or-lumineux-foreground);font-weight:600}
+.step--active .step-label{color:var(--texte-principal)}
+.step-connector{height:1px;background:var(--bordure);flex:1;min-width:24px}
+/* ---- Layout ---- */
+main{max-width:1024px;margin:0 auto;padding:40px 0 56px}
+.etape-titre{font-size:30px;font-weight:600;line-height:1.2;letter-spacing:-0.01em}
+.etape-microcopie{margin-top:8px;color:var(--texte-secondaire);font-size:15px}
+.scene{margin-top:var(--scene-gap)}
+/* ---- Panneau d'attente ---- */
+.panneau-attente{
+  background:var(--surface-elevee);
+  border:1px solid var(--bordure);
+  border-radius:var(--rounded-lg);
+  max-width:640px;margin:0 auto;
+  padding:32px 36px;
+}
+.phases{display:flex;align-items:center;gap:10px;margin-bottom:20px}
+.phase{
+  font-size:13px;font-weight:500;letter-spacing:0.12em;line-height:1.4;
+  text-transform:uppercase;white-space:nowrap;
+  display:flex;align-items:center;gap:7px;
+}
+.phase--faite{color:var(--texte-principal)}
+.phase--faite svg{width:13px;height:13px;stroke:var(--texte-principal)}
+.phase--courante{color:var(--or-lumineux)}
+.phase--future{color:var(--texte-secondaire)}
+.phase-connecteur{height:1px;background:var(--bordure);flex:1;min-width:16px}
+.barre-progression{
+  height:6px;border-radius:9999px;background:var(--bordure);overflow:hidden;
+}
+.barre-progression-remplie{
+  width:56%;height:100%;border-radius:9999px;background:var(--or-lumineux);
+}
+.attente-meta{
+  margin-top:10px;display:flex;justify-content:space-between;
+  font-size:13px;color:var(--texte-secondaire);
+  font-variant-numeric:tabular-nums;
+}
+.attente-message{
+  margin-top:20px;
+  font-size:16px;font-weight:400;line-height:1.6;
+  color:var(--texte-principal);
+  text-align:center;
+}
+/* ---- Cartes de comparaison : l'avant/après contemplable ---- */
+.comparaison{
+  margin-top:var(--scene-gap);
+  display:grid;grid-template-columns:1fr 1fr;gap:24px;
+}
+.carte-comparaison{
+  background:var(--surface-carte);
+  border:1px solid var(--bordure);
+  border-radius:var(--rounded-lg);
+  overflow:hidden;
+}
+.carte-comparaison svg{width:100%;height:auto;display:block}
+.carte-legende{
+  font-size:13px;font-weight:500;letter-spacing:0.12em;line-height:1.4;
+  text-transform:uppercase;color:var(--texte-secondaire);
+  text-align:center;padding:12px 16px;
+}
+/* ---- Lecteur de la Révélation ---- */
+.lecteur-cadre{
+  position:relative;
+  border:1px solid var(--bordure);
+  border-radius:var(--rounded-lg);
+  overflow:hidden;line-height:0;
+  /* Lueur or du projecteur : blur ≥ 40 px, opacité ≤ 8 % — Révélation uniquement */
+  box-shadow:0 0 64px 8px rgba(242,193,78,0.08);
+}
+.lecteur-cadre svg{width:100%;height:auto;display:block}
+.lecteur-controles{
+  position:absolute;left:0;right:0;bottom:0;
+  display:flex;align-items:center;gap:14px;
+  padding:12px 18px;
+  background:linear-gradient(to top, rgba(11,13,18,0.72), rgba(11,13,18,0));
+  line-height:1.4;
+}
+.ctrl{
+  width:34px;height:34px;border:none;border-radius:8px;
+  background:rgba(11,13,18,0.4);
+  display:flex;align-items:center;justify-content:center;cursor:pointer;flex:none;
+}
+.ctrl svg{width:16px;height:16px;stroke:var(--texte-principal);fill:var(--texte-principal);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.ctrl--ligne svg{fill:none}
+.timeline{flex:1;height:4px;border-radius:9999px;background:rgba(237,239,244,0.25);position:relative}
+.timeline-lue{position:absolute;left:0;top:0;bottom:0;width:62%;border-radius:9999px;background:var(--texte-principal)}
+.temps{font-size:12px;color:var(--texte-principal);font-variant-numeric:tabular-nums;white-space:nowrap}
+/* ---- Actions sous le lecteur ---- */
+.actions{margin-top:32px;display:flex;justify-content:flex-end;gap:12px}
+.bouton-generation{
+  background:var(--or-lumineux);color:var(--or-lumineux-foreground);
+  border:none;border-radius:var(--rounded-lg);
+  font-family:inherit;font-size:15px;font-weight:600;
+  padding:0 28px;height:44px;cursor:pointer;
+}
+.bouton-secondaire{
+  background:transparent;color:var(--texte-principal);
+  border:1px solid var(--bordure);border-radius:var(--rounded-lg);
+  font-family:inherit;font-size:15px;font-weight:500;
+  padding:0 22px;height:44px;cursor:pointer;
+}
+.bouton-ghost{
+  background:transparent;color:var(--texte-secondaire);
+  border:none;border-radius:var(--rounded-lg);
+  font-family:inherit;font-size:15px;font-weight:500;
+  padding:0 18px;height:44px;cursor:pointer;
+}
+.pied{
+  max-width:1024px;margin:64px auto 40px;
+  text-align:center;color:var(--texte-secondaire);font-size:12px;
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="mur" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#A79781"/><stop offset="1" stop-color="#857661"/>
+    </linearGradient>
+    <linearGradient id="sol" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9A7550"/><stop offset="1" stop-color="#6E5238"/>
+    </linearGradient>
+    <linearGradient id="vitre" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F4EDDC"/><stop offset="1" stop-color="#D8CCB2"/>
+    </linearGradient>
+    <linearGradient id="canape" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#D6C5A3"/><stop offset="1" stop-color="#B09E7E"/>
+    </linearGradient>
+    <linearGradient id="bois" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8A6743"/><stop offset="1" stop-color="#6B4E31"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<div class="mock-divider">État 1 — Attente (Génération de la Révélation en cours)</div>
+
+<!-- ================= ÉTAT 1 : ATTENTE ================= -->
+<section aria-label="Étape Vidéo — état attente">
+  <header class="stepper" aria-label="Parcours">
+    <div class="stepper-inner">
+      <div class="step step--done">
+        <span class="step-dot"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+        <span class="step-label">Upload</span>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step step--done">
+        <span class="step-dot"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+        <span class="step-label">Masque</span>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step step--done">
+        <span class="step-dot"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+        <span class="step-label">Pièce vide</span>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step step--active" aria-current="step">
+        <span class="step-dot">4</span>
+        <span class="step-label">Vidéo</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <h1 class="etape-titre">Votre Révélation</h1>
+
+    <!-- Panneau d'attente : phases nommées + temps écoulé + barre or -->
+    <div class="scene">
+      <div class="panneau-attente" role="status" aria-live="polite">
+        <div class="phases">
+          <span class="phase phase--faite">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            Envoi de vos images
+          </span>
+          <span class="phase-connecteur"></span>
+          <span class="phase phase--courante">Génération de la Révélation</span>
+          <span class="phase-connecteur"></span>
+          <span class="phase phase--future">Finalisation</span>
+        </div>
+        <div class="barre-progression"><div class="barre-progression-remplie"></div></div>
+        <div class="attente-meta">
+          <span>Génération de la Révélation…</span>
+          <span>Temps écoulé&nbsp;: 1&nbsp;min&nbsp;12&nbsp;s</span>
+        </div>
+        <p class="attente-message">Votre Révélation se prépare — comptez 1 à 3&nbsp;minutes.</p>
+      </div>
+
+      <!-- Avant/après contemplable pendant l'attente -->
+      <div class="comparaison">
+        <figure class="carte-comparaison">
+          <svg viewBox="0 0 600 360" role="img" aria-label="Votre photo : salon-annonce.jpg">
+            <rect x="0" y="0" width="600" height="242" fill="url(#mur)"/>
+            <rect x="0" y="236" width="600" height="8" fill="#746753"/>
+            <rect x="0" y="242" width="600" height="118" fill="url(#sol)"/>
+            <rect x="392" y="42" width="150" height="146" rx="3" fill="#6D604C"/>
+            <rect x="398" y="48" width="138" height="134" fill="url(#vitre)"/>
+            <line x1="467" y1="48" x2="467" y2="182" stroke="#6D604C" stroke-width="5"/>
+            <line x1="398" y1="115" x2="536" y2="115" stroke="#6D604C" stroke-width="5"/>
+            <rect x="96" y="58" width="78" height="56" rx="2" fill="#5C4F3D"/>
+            <rect x="101" y="63" width="68" height="46" fill="#C4B394"/>
+            <ellipse cx="262" cy="312" rx="150" ry="26" fill="#9C5B47" opacity="0.85"/>
+            <g>
+              <rect x="152" y="166" width="170" height="46" rx="9" fill="url(#canape)"/>
+              <rect x="146" y="204" width="182" height="42" rx="8" fill="#BCA987"/>
+              <rect x="139" y="182" width="18" height="58" rx="7" fill="#A9976F"/>
+              <rect x="320" y="182" width="18" height="58" rx="7" fill="#A9976F"/>
+            </g>
+            <g>
+              <rect x="344" y="258" width="98" height="10" rx="4" fill="url(#bois)"/>
+              <rect x="350" y="268" width="6" height="24" fill="#5C4228"/>
+              <rect x="430" y="268" width="6" height="24" fill="#5C4228"/>
+            </g>
+            <path d="M548 242 L572 242 L568 270 L552 270 Z" fill="#7A5A3C"/>
+            <ellipse cx="556" cy="222" rx="8" ry="24" fill="#5A7A52" transform="rotate(-20 556 222)"/>
+            <ellipse cx="566" cy="216" rx="8" ry="28" fill="#66875C"/>
+          </svg>
+          <figcaption class="carte-legende">Photo originale</figcaption>
+        </figure>
+        <figure class="carte-comparaison">
+          <svg viewBox="0 0 600 360" role="img" aria-label="Pièce vide générée">
+            <rect x="0" y="0" width="600" height="242" fill="url(#mur)"/>
+            <rect x="0" y="236" width="600" height="8" fill="#746753"/>
+            <rect x="0" y="242" width="600" height="118" fill="url(#sol)"/>
+            <g stroke="#5E4630" stroke-width="1" opacity="0.35">
+              <line x1="0" y1="274" x2="600" y2="274"/>
+              <line x1="0" y1="308" x2="600" y2="308"/>
+              <line x1="0" y1="342" x2="600" y2="342"/>
+            </g>
+            <rect x="392" y="42" width="150" height="146" rx="3" fill="#6D604C"/>
+            <rect x="398" y="48" width="138" height="134" fill="url(#vitre)"/>
+            <line x1="467" y1="48" x2="467" y2="182" stroke="#6D604C" stroke-width="5"/>
+            <line x1="398" y1="115" x2="536" y2="115" stroke="#6D604C" stroke-width="5"/>
+            <rect x="96" y="58" width="78" height="56" rx="2" fill="#5C4F3D"/>
+            <rect x="101" y="63" width="68" height="46" fill="#C4B394"/>
+            <ellipse cx="467" cy="300" rx="130" ry="22" fill="#F4EDDC" opacity="0.08"/>
+          </svg>
+          <figcaption class="carte-legende">Pièce vide</figcaption>
+        </figure>
+      </div>
+    </div>
+  </main>
+</section>
+
+<div class="mock-divider">État 2 — Révélation prête (lecture en cours)</div>
+
+<!-- ================= ÉTAT 2 : RÉVÉLATION ================= -->
+<section aria-label="Étape Vidéo — état Révélation">
+  <header class="stepper" aria-label="Parcours">
+    <div class="stepper-inner">
+      <div class="step step--done">
+        <span class="step-dot"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+        <span class="step-label">Upload</span>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step step--done">
+        <span class="step-dot"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+        <span class="step-label">Masque</span>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step step--done">
+        <span class="step-dot"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+        <span class="step-label">Pièce vide</span>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step step--active" aria-current="step">
+        <span class="step-dot"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+        <span class="step-label">Vidéo</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <h1 class="etape-titre">Votre Révélation</h1>
+    <p class="etape-microcopie">Vos meubles atterrissent exactement à leur place.</p>
+
+    <!-- Lecteur de la Révélation : lueur or du projecteur, contrôles sobres -->
+    <div class="scene">
+      <div class="lecteur-cadre" role="img" aria-label="Vidéo de révélation de votre pièce — lecture en cours">
+        <svg viewBox="0 0 1024 576">
+          <rect x="0" y="0" width="1024" height="388" fill="url(#mur)"/>
+          <rect x="0" y="378" width="1024" height="12" fill="#746753"/>
+          <rect x="0" y="388" width="1024" height="188" fill="url(#sol)"/>
+          <rect x="656" y="64" width="252" height="238" rx="4" fill="#6D604C"/>
+          <rect x="666" y="74" width="232" height="218" fill="url(#vitre)"/>
+          <line x1="782" y1="74" x2="782" y2="292" stroke="#6D604C" stroke-width="8"/>
+          <line x1="666" y1="183" x2="898" y2="183" stroke="#6D604C" stroke-width="8"/>
+          <rect x="162" y="92" width="128" height="92" rx="3" fill="#5C4F3D"/>
+          <rect x="170" y="100" width="112" height="76" fill="#C4B394"/>
+          <ellipse cx="440" cy="500" rx="248" ry="42" fill="#9C5B47" opacity="0.85"/>
+          <!-- Canapé posé — fin de l'atterrissage -->
+          <g>
+            <rect x="258" y="268" width="278" height="72" rx="13" fill="url(#canape)"/>
+            <rect x="248" y="328" width="298" height="66" rx="12" fill="#BCA987"/>
+            <rect x="236" y="292" width="28" height="94" rx="10" fill="#A9976F"/>
+            <rect x="530" y="292" width="28" height="94" rx="10" fill="#A9976F"/>
+          </g>
+          <!-- Table basse encore en vol : flotte au-dessus de sa place, ombre douce dessous -->
+          <ellipse cx="678" cy="472" rx="86" ry="12" fill="#3C2C1C" opacity="0.35"/>
+          <g transform="translate(0,-56) rotate(-4 678 430)">
+            <rect x="600" y="412" width="156" height="15" rx="5" fill="url(#bois)"/>
+            <rect x="610" y="427" width="8" height="38" fill="#5C4228"/>
+            <rect x="738" y="427" width="8" height="38" fill="#5C4228"/>
+          </g>
+          <path d="M934 388 L972 388 L967 432 L939 432 Z" fill="#7A5A3C"/>
+          <ellipse cx="940" cy="356" rx="12" ry="36" fill="#5A7A52" transform="rotate(-22 940 356)"/>
+          <ellipse cx="956" cy="348" rx="12" ry="42" fill="#66875C"/>
+          <ellipse cx="970" cy="360" rx="11" ry="33" fill="#4E6B47" transform="rotate(20 970 360)"/>
+        </svg>
+        <div class="lecteur-controles">
+          <button class="ctrl" aria-label="Pause">
+            <svg viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+          </button>
+          <button class="ctrl ctrl--ligne" aria-label="Relecture">
+            <svg viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/></svg>
+          </button>
+          <div class="timeline" role="progressbar" aria-label="Progression de la lecture"><div class="timeline-lue"></div></div>
+          <span class="temps">0:03&nbsp;/&nbsp;0:05</span>
+        </div>
+      </div>
+
+      <!-- Actions : l'or reste réservé à l'acte principal -->
+      <div class="actions">
+        <button class="bouton-ghost">Nouvelle Génération</button>
+        <button class="bouton-secondaire">Revoir</button>
+        <button class="bouton-generation">Télécharger le MP4</button>
+      </div>
+    </div>
+
+    <p class="pied">Vos photos sont supprimées automatiquement après 24&nbsp;heures.</p>
+  </main>
+</section>
+
+</body>
+</html>

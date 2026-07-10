@@ -1,0 +1,330 @@
+<!-- Mock indicatif — DESIGN.md et EXPERIENCE.md font foi en cas de conflit. -->
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>RoomReveal — Étape 2 : Masque (mock)</title>
+<style>
+/* ============================================================
+   Sections de spine gouvernant cet écran :
+   DESIGN.md      — Colors, Typography (display, carton-titre),
+                    Layout & Spacing (scene-gap, max-w-5xl, action à droite),
+                    Shapes (rounded.lg cadres média), Elevation & Depth (ton, pas d'ombre),
+                    Components : Stepper du Parcours, Canvas du Masque,
+                    Barre d'outils du Masque, Bouton de Génération.
+   EXPERIENCE.md  — Component Patterns : Stepper, Canvas du Masque,
+                    Barre d'outils du Masque, Bouton de Génération ;
+                    Voice and Tone (« Voici le Masque… ») ;
+                    Flow 1 étape 3 (correction du tapis oublié au pinceau) ;
+                    Cycle de vie de la Génération (ligne confidentialité).
+   Tous les tokens ci-dessous proviennent du frontmatter DESIGN.md.
+   ============================================================ */
+:root{
+  --fond-projection:#0B0D12;
+  --surface-carte:#141821;
+  --surface-elevee:#1B2130;
+  --texte-principal:#EDEFF4;
+  --texte-secondaire:#98A2B3;
+  --bordure:#252C3B;
+  --or-lumineux:#F2C14E;
+  --or-lumineux-foreground:#1A1305;
+  --masque-overlay:#FF2E9E;
+  --masque-contour:#FF7AC2;
+  --rounded-lg:12px;
+  --scene-gap:48px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:var(--fond-projection);
+  color:var(--texte-principal);
+  font-family:"Geist Sans","Geist",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:14px;line-height:1.5;
+  min-height:100vh;
+}
+/* ---- Stepper du Parcours : bandeau fixe en haut ---- */
+.stepper{
+  position:sticky;top:0;z-index:10;
+  background:var(--fond-projection);
+  border-bottom:1px solid var(--bordure);
+  padding:16px 40px;
+}
+.stepper-inner{
+  max-width:1024px;margin:0 auto;
+  display:flex;align-items:center;gap:12px;
+}
+.step{display:flex;align-items:center;gap:10px;flex:none}
+.step-dot{
+  width:28px;height:28px;border-radius:9999px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:500;flex:none;
+}
+.step-label{
+  font-size:13px;font-weight:500;letter-spacing:0.12em;line-height:1.4;
+  text-transform:uppercase;white-space:nowrap;
+}
+.step--done .step-dot{
+  background:var(--surface-carte);
+  border:1px solid var(--bordure);
+  color:var(--texte-principal);
+}
+.step--done .step-label{color:var(--texte-principal)}
+.step--done{cursor:pointer}
+.step--active .step-dot{
+  background:var(--or-lumineux);
+  color:var(--or-lumineux-foreground);
+  font-weight:600;
+}
+.step--active .step-label{color:var(--texte-principal)}
+.step--future .step-dot{
+  background:transparent;
+  border:1px solid var(--bordure);
+  color:var(--texte-secondaire);
+}
+.step--future .step-label{color:var(--texte-secondaire)}
+.step-connector{height:1px;background:var(--bordure);flex:1;min-width:24px}
+/* ---- Layout : une colonne centrée, max-w-5xl ---- */
+main{max-width:1024px;margin:0 auto;padding:40px 0 64px}
+.etape-titre{
+  font-size:30px;font-weight:600;line-height:1.2;letter-spacing:-0.01em;
+}
+.etape-microcopie{
+  margin-top:8px;
+  color:var(--texte-secondaire);
+  font-size:15px;
+}
+/* ---- Canvas du Masque : la scène ---- */
+.scene{margin-top:var(--scene-gap)}
+.canvas-masque{
+  border:1px solid var(--bordure);
+  border-radius:var(--rounded-lg);
+  overflow:hidden;
+  background:var(--surface-carte);
+  line-height:0;
+}
+.canvas-masque svg{width:100%;height:auto;display:block}
+/* ---- Barre d'outils du Masque : flottante sous le canvas ---- */
+.barre-outils{
+  margin:20px auto 0;
+  width:fit-content;
+  display:flex;align-items:center;gap:8px;
+  background:var(--surface-elevee);
+  border:1px solid var(--bordure);
+  border-radius:8px;
+  padding:8px 12px;
+}
+.outil{
+  width:38px;height:38px;border-radius:8px;border:none;
+  display:flex;align-items:center;justify-content:center;
+  background:transparent;cursor:pointer;
+}
+.outil svg{width:19px;height:19px;stroke:var(--texte-secondaire);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.outil--actif{background:var(--or-lumineux)}
+.outil--actif svg{stroke:var(--or-lumineux-foreground)}
+.outil--ghost:hover{background:rgba(237,239,244,0.06)}
+.separateur{width:1px;height:26px;background:var(--bordure);margin:0 6px}
+.taille{display:flex;align-items:center;gap:12px;padding:0 4px}
+.taille-label{font-size:12px;color:var(--texte-secondaire);white-space:nowrap}
+.slider{position:relative;width:140px;height:16px;display:flex;align-items:center}
+.slider-track{position:absolute;left:0;right:0;height:4px;border-radius:9999px;background:var(--bordure)}
+.slider-range{position:absolute;left:0;width:38%;height:4px;border-radius:9999px;background:var(--texte-principal)}
+.slider-thumb{
+  position:absolute;left:calc(38% - 8px);
+  width:16px;height:16px;border-radius:9999px;
+  background:var(--texte-principal);
+  border:1px solid var(--bordure);
+}
+.taille-valeur{font-size:12px;color:var(--texte-principal);min-width:40px;text-align:right;font-variant-numeric:tabular-nums}
+/* ---- Bouton de Génération : l'unique action d'or ---- */
+.actions{
+  max-width:1024px;margin:32px auto 0;
+  display:flex;justify-content:flex-end;
+}
+.bouton-generation{
+  background:var(--or-lumineux);
+  color:var(--or-lumineux-foreground);
+  border:none;border-radius:var(--rounded-lg);
+  font-family:inherit;font-size:15px;font-weight:600;
+  padding:0 28px;height:44px;cursor:pointer;
+}
+/* ---- Pied de page : rassurance confidentialité ---- */
+.pied{
+  max-width:1024px;margin:64px auto 0;
+  text-align:center;
+  color:var(--texte-secondaire);
+  font-size:12px;
+}
+</style>
+</head>
+<body>
+
+<!-- Stepper du Parcours : Masque actif (étape 2/4) -->
+<header class="stepper" aria-label="Parcours">
+  <div class="stepper-inner">
+    <div class="step step--done">
+      <span class="step-dot" aria-hidden="true">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+      </span>
+      <span class="step-label">Upload</span>
+    </div>
+    <div class="step-connector"></div>
+    <div class="step step--active" aria-current="step">
+      <span class="step-dot">2</span>
+      <span class="step-label">Masque</span>
+    </div>
+    <div class="step-connector"></div>
+    <div class="step step--future">
+      <span class="step-dot">3</span>
+      <span class="step-label">Pièce vide</span>
+    </div>
+    <div class="step-connector"></div>
+    <div class="step step--future">
+      <span class="step-dot">4</span>
+      <span class="step-label">Vidéo</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <h1 class="etape-titre">Votre Masque</h1>
+  <p class="etape-microcopie">Voici le Masque&nbsp;: tout ce qui est surligné disparaîtra de la pièce.</p>
+
+  <!-- Canvas du Masque : Photo originale (placeholder CSS/SVG) + overlay fuchsia 45 % -->
+  <div class="scene">
+    <div class="canvas-masque" role="img" aria-label="Votre photo : salon-annonce.jpg — Masque en cours d'édition">
+      <svg viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="mur" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#A79781"/>
+            <stop offset="1" stop-color="#857661"/>
+          </linearGradient>
+          <linearGradient id="sol" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#9A7550"/>
+            <stop offset="1" stop-color="#6E5238"/>
+          </linearGradient>
+          <linearGradient id="vitre" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#F4EDDC"/>
+            <stop offset="1" stop-color="#D8CCB2"/>
+          </linearGradient>
+          <linearGradient id="canape" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#D6C5A3"/>
+            <stop offset="1" stop-color="#B09E7E"/>
+          </linearGradient>
+          <linearGradient id="bois" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#8A6743"/>
+            <stop offset="1" stop-color="#6B4E31"/>
+          </linearGradient>
+        </defs>
+
+        <!-- Pièce : mur, plinthe, sol -->
+        <rect x="0" y="0" width="1200" height="470" fill="url(#mur)"/>
+        <rect x="0" y="458" width="1200" height="14" fill="#746753"/>
+        <rect x="0" y="470" width="1200" height="230" fill="url(#sol)"/>
+        <g stroke="#5E4630" stroke-width="1.5" opacity="0.35">
+          <line x1="0" y1="530" x2="1200" y2="530"/>
+          <line x1="0" y1="595" x2="1200" y2="595"/>
+          <line x1="0" y1="662" x2="1200" y2="662"/>
+        </g>
+
+        <!-- Fenêtre lumineuse -->
+        <rect x="770" y="78" width="300" height="286" rx="4" fill="#6D604C"/>
+        <rect x="782" y="90" width="276" height="262" fill="url(#vitre)"/>
+        <line x1="920" y1="90" x2="920" y2="352" stroke="#6D604C" stroke-width="10"/>
+        <line x1="782" y1="221" x2="1058" y2="221" stroke="#6D604C" stroke-width="10"/>
+        <ellipse cx="920" cy="480" rx="260" ry="46" fill="#F4EDDC" opacity="0.08"/>
+
+        <!-- Cadre au mur -->
+        <rect x="196" y="112" width="150" height="108" rx="3" fill="#5C4F3D"/>
+        <rect x="206" y="122" width="130" height="88" fill="#C4B394"/>
+        <path d="M206 190 L250 152 L282 176 L312 148 L336 168 L336 210 L206 210 Z" fill="#8F7E62"/>
+
+        <!-- Lampadaire -->
+        <rect x="146" y="284" width="8" height="196" rx="3" fill="#4E4436"/>
+        <ellipse cx="150" cy="482" rx="34" ry="8" fill="#463D30"/>
+        <path d="M118 236 L182 236 L170 288 L130 288 Z" fill="#D9C8A4"/>
+
+        <!-- Plante -->
+        <path d="M1108 470 L1152 470 L1146 522 L1114 522 Z" fill="#7A5A3C"/>
+        <ellipse cx="1112" cy="432" rx="14" ry="42" fill="#5A7A52" transform="rotate(-24 1112 432)"/>
+        <ellipse cx="1130" cy="418" rx="14" ry="52" fill="#66875C"/>
+        <ellipse cx="1148" cy="434" rx="13" ry="40" fill="#4E6B47" transform="rotate(22 1148 434)"/>
+
+        <!-- Tapis (oublié par la Détection — Claire le corrige au pinceau) -->
+        <ellipse cx="520" cy="606" rx="296" ry="52" fill="#9C5B47" opacity="0.85"/>
+        <ellipse cx="520" cy="606" rx="252" ry="40" fill="none" stroke="#B57460" stroke-width="3" opacity="0.6"/>
+
+        <!-- Canapé (détecté) -->
+        <g>
+          <rect x="308" y="322" width="330" height="88" rx="16" fill="url(#canape)"/>
+          <rect x="296" y="396" width="354" height="80" rx="14" fill="#BCA987"/>
+          <rect x="316" y="336" width="146" height="66" rx="12" fill="#CBB995"/>
+          <rect x="482" y="336" width="146" height="66" rx="12" fill="#C3B18D"/>
+          <rect x="282" y="352" width="34" height="112" rx="12" fill="#A9976F"/>
+          <rect x="630" y="352" width="34" height="112" rx="12" fill="#A9976F"/>
+          <rect x="316" y="474" width="14" height="18" fill="#4E4436"/>
+          <rect x="616" y="474" width="14" height="18" fill="#4E4436"/>
+        </g>
+
+        <!-- Table basse (détectée) -->
+        <g>
+          <rect x="672" y="500" width="188" height="18" rx="6" fill="url(#bois)"/>
+          <rect x="684" y="518" width="10" height="46" fill="#5C4228"/>
+          <rect x="838" y="518" width="10" height="46" fill="#5C4228"/>
+          <rect x="700" y="540" width="132" height="10" rx="4" fill="#7A5A3C" opacity="0.8"/>
+        </g>
+
+        <!-- ===== Masque : overlay fuchsia 45 % + contour plein 1,5 px ===== -->
+        <!-- Zone détectée : canapé -->
+        <path d="M292 322 Q292 306 312 306 L634 306 Q654 306 654 322 L654 344
+                 Q668 348 668 366 L668 456 Q668 480 646 480 L300 480
+                 Q278 480 278 456 L278 366 Q278 348 292 344 Z"
+              fill="#FF2E9E" fill-opacity="0.45" stroke="#FF7AC2" stroke-width="1.5"/>
+        <!-- Zone détectée : table basse -->
+        <rect x="662" y="490" width="208" height="82" rx="12"
+              fill="#FF2E9E" fill-opacity="0.45" stroke="#FF7AC2" stroke-width="1.5"/>
+        <!-- Trait de pinceau en cours sur le tapis oublié (effet immédiat, FR-6) -->
+        <path d="M330 596 Q420 576 508 588 Q560 596 596 610 Q560 632 470 634 Q380 634 330 618 Z"
+              fill="#FF2E9E" fill-opacity="0.45" stroke="#FF7AC2" stroke-width="1.5"/>
+        <!-- Curseur pinceau : cercle à la taille de l'outil -->
+        <circle cx="608" cy="612" r="24" fill="none" stroke="#EDEFF4" stroke-width="1.5" opacity="0.9"/>
+      </svg>
+    </div>
+
+    <!-- Barre d'outils du Masque -->
+    <div class="barre-outils" role="toolbar" aria-label="Outils du Masque">
+      <button class="outil outil--actif" aria-label="Pinceau" aria-pressed="true">
+        <svg viewBox="0 0 24 24"><path d="M9.06 11.9 18.6 2.4a2.1 2.1 0 0 1 3 3l-9.5 9.5"/><path d="M7.5 13.5c-2.2 0-4 1.8-4 4 0 1.5-1 2.5-2.5 2.5 1 1.3 2.6 2 4.5 2 2.8 0 5-2.2 5-5"/></svg>
+      </button>
+      <button class="outil" aria-label="Gomme" aria-pressed="false">
+        <svg viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>
+      </button>
+      <div class="separateur"></div>
+      <div class="taille">
+        <span class="taille-label">Taille</span>
+        <div class="slider" role="slider" aria-label="Taille de l'outil" aria-valuemin="4" aria-valuemax="128" aria-valuenow="48">
+          <div class="slider-track"></div>
+          <div class="slider-range"></div>
+          <div class="slider-thumb"></div>
+        </div>
+        <span class="taille-valeur">48&nbsp;px</span>
+      </div>
+      <div class="separateur"></div>
+      <button class="outil outil--ghost" aria-label="Annuler">
+        <svg viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/></svg>
+      </button>
+      <button class="outil outil--ghost" aria-label="Rétablir">
+        <svg viewBox="0 0 24 24"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 15-6.7L21 13"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Action principale de l'étape : sous la scène, alignée à droite -->
+  <div class="actions">
+    <button class="bouton-generation">Valider le Masque</button>
+  </div>
+
+  <p class="pied">Vos photos sont supprimées automatiquement après 24&nbsp;heures.</p>
+</main>
+
+</body>
+</html>
