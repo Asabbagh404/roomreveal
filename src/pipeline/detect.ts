@@ -1,7 +1,7 @@
 import { makeStepError } from "@/state/step-error";
 import { ARTIFACT_EXPIRES_IN_SECONDS, MODELS, TIMEOUTS_MS } from "./config";
 import { fal } from "./client";
-import { FURNITURE_PROMPTS } from "./prompts";
+import { SAM_DETECT_PROMPT } from "./prompts";
 import type { AdapterOptions, DetectResult } from "./types";
 
 /** Normalises a possibly-empty URL field to a real URL or null (FR-16 signal). */
@@ -44,9 +44,8 @@ export async function detect(
     const run = fal.subscribe(MODELS.detect, {
       input: {
         image_url: photoUrl,
-        // SAM 3 is text-prompted (single prompt string); the furniture list is
-        // joined so every category is a segmentation target.
-        prompt: FURNITURE_PROMPTS.join(", "),
+        // Broad English concept — see SAM_DETECT_PROMPT calibration note.
+        prompt: SAM_DETECT_PROMPT,
         return_multiple_masks: true,
         output_format: "png",
       },

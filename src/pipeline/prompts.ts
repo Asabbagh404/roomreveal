@@ -4,10 +4,22 @@
  */
 
 /**
- * Furniture categories fed to the SAM 3 text-prompted segmentation model
- * (glossary §3). The detect adapter turns these into the model's prompt input.
+ * The text prompt fed to SAM 3 for furniture segmentation.
+ *
+ * [Calibrated live 2026-07-11] SAM 3 is English-only and returns a combined
+ * mask for the broad concept "furniture"; the French per-category list (below)
+ * and dot/comma-separated multi-concept prompts returned zero segments on real
+ * room photos. Since the mask is fully user-editable afterwards (FR-6/FR-7), a
+ * broad furniture mask is the right starting point. Per-category enrichment
+ * (multiple calls unioned) is a possible future refinement.
  */
-export const FURNITURE_PROMPTS: readonly string[] = [
+export const SAM_DETECT_PROMPT = "furniture";
+
+/**
+ * The furniture vocabulary from the glossary (§3), kept for reference and for a
+ * future multi-concept detection strategy. Not currently sent as-is (see above).
+ */
+export const FURNITURE_CATEGORIES: readonly string[] = [
   "canapé",
   "chaise",
   "table",
