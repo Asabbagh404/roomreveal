@@ -11,8 +11,18 @@ vi.mock("@/pipeline", () => ({
   uploadArtifact: (...a: unknown[]) => uploadArtifact(...a),
 }));
 
-import { runDetect } from "./effects";
+// encodeMaskPng is browser-only (canvas) — mock at its boundary (live-verified).
+const encodeMaskPng = vi.fn();
+encodeMaskPng.mockResolvedValue(new Blob(["png"], { type: "image/png" }));
+vi.mock("@/lib/mask-encode", () => ({
+  encodeMaskPng: (...a: unknown[]) => encodeMaskPng(...a),
+}));
+
+import { runDetect, runValidateMask } from "./effects";
 import type { Generation } from "./types";
+
+const paintedBuffer = { data: new Uint8Array([0, 255, 0, 0]), width: 2, height: 2 };
+const emptyBuffer = { data: new Uint8Array(4), width: 2, height: 2 };
 
 function baseState(overrides: Partial<Generation> = {}): Generation {
   return {
@@ -29,6 +39,7 @@ const signal = new AbortController().signal;
 afterEach(() => {
   detect.mockReset();
   uploadArtifact.mockReset();
+  encodeMaskPng.mockClear();
 });
 
 describe("runDetect (AD-12 orchestration)", () => {
@@ -154,5 +165,61 @@ describe("runDetect (AD-12 orchestration)", () => {
       type: "SET_WAIT_PHASE",
       phase: "generating",
     });
+  });
+});
+
+describe("runValidateMask (AD-13 validation)", () => {
+  it("encodes + uploads the buffer, then dispatches MASK_VALIDATED", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/mask.png");
+    const dispatch = vi.fn();
+    const state = baseState({ maskDraft: { detectedMaskUrl: "d", buffer: paintedBuffer } });
+
+    await runValidateMask(state, dispatch, { signal, isStale: notStale });
+
+    expect(encodeMaskPng).toHaveBeenCalledWith(paintedBuffer);
+    expect(uploadArtifact).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "MASK_VALIDATED",
+      maskUrl: "https://fal/mask.png",
+    });
+  });
+
+  it("is a no-op for an empty or missing buffer (never uploads)", async () => {
+    const dispatch = vi.fn();
+    await runValidateMask(
+      baseState({ maskDraft: { detectedMaskUrl: "d", buffer: emptyBuffer } }),
+      dispatch,
+      { signal, isStale: notStale },
+    );
+    await runValidateMask(
+      baseState({ maskDraft: { detectedMaskUrl: "d" } }),
+      dispatch,
+      { signal, isStale: notStale },
+    );
+    expect(uploadArtifact).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("drops the dispatch when the run became stale mid-upload (AD-12)", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/mask.png");
+    const dispatch = vi.fn();
+    const state = baseState({ maskDraft: { detectedMaskUrl: "d", buffer: paintedBuffer } });
+
+    await runValidateMask(state, dispatch, { signal, isStale: () => true });
+
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("throws on upload failure (handled inline by the caller, not SET_ERROR)", async () => {
+    uploadArtifact.mockRejectedValue(new Error("network"));
+    const dispatch = vi.fn();
+    const state = baseState({ maskDraft: { detectedMaskUrl: "d", buffer: paintedBuffer } });
+
+    await expect(
+      runValidateMask(state, dispatch, { signal, isStale: notStale }),
+    ).rejects.toThrow();
+    expect(dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "SET_ERROR" }),
+    );
   });
 });

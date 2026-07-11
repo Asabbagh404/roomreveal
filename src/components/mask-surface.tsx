@@ -2,15 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useGeneration } from "@/state/generation-context";
-import { runDetect } from "@/state/effects";
+import type { Generation } from "@/state/types";
+import { runDetect, runValidateMask } from "@/state/effects";
 import {
   createBlankBuffer,
+  isBufferEmpty,
   paintStroke,
   type MaskBuffer,
   type Point,
   type StrokeMode,
 } from "@/lib/mask-buffer";
 import { rasterizeMaskUrl } from "@/lib/mask-raster";
+import { GenerationButton } from "@/components/generation-button";
 import {
   canRedo as canRedoH,
   canUndo as canUndoH,
@@ -52,10 +55,14 @@ export function MaskSurface() {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [history, setHistory] = useState<History<MaskBuffer> | null>(null);
+  // Mask validation (Story 2.3) — user-initiated, so errors are inline & local.
+  const [validating, setValidating] = useState(false);
+  const [validateError, setValidateError] = useState<string | null>(null);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const cursorRef = useRef<HTMLDivElement>(null);
+  const validatingRef = useRef(false); // synchronous re-entry guard for validate
 
   // Latest values read inside imperative event handlers without stale closures.
   const toolRef = useRef(tool);
@@ -419,6 +426,39 @@ export function MaskSurface() {
     };
   }, [doUndo, doRedo]);
 
+  // ---- Validate the mask (Story 2.3) ----
+  const canValidate = buffer !== undefined && !isBufferEmpty(buffer);
+  const handleValidate = useCallback(async () => {
+    // Read the LIVE buffer from the ref (not the closure `state`, which could lag
+    // a paint commit by a frame) and guard re-entry synchronously via a ref (the
+    // `validating` state flips only on the next render).
+    const buf = bufferRef.current;
+    if (validatingRef.current || buf === undefined || isBufferEmpty(buf)) return;
+    validatingRef.current = true;
+    setValidating(true);
+    setValidateError(null);
+    const controller = new AbortController();
+    const startEpoch = epochRef.current;
+    const snapshot: Generation = {
+      ...state,
+      maskDraft: {
+        detectedMaskUrl: state.maskDraft?.detectedMaskUrl ?? null,
+        buffer: buf,
+      },
+    };
+    try {
+      await runValidateMask(snapshot, dispatch, {
+        signal: controller.signal,
+        isStale: () => epochRef.current !== startEpoch,
+      });
+    } catch {
+      setValidateError("L’envoi du Masque a échoué. Réessayez.");
+    } finally {
+      validatingRef.current = false;
+      setValidating(false);
+    }
+  }, [state, dispatch]);
+
   const aspectRatio =
     photoWidth > 0 && photoHeight > 0 ? `${photoWidth} / ${photoHeight}` : undefined;
   const h = history;
@@ -479,6 +519,21 @@ export function MaskSurface() {
         onUndo={doUndo}
         onRedo={doRedo}
       />
+
+      <div className="flex flex-col items-center gap-2">
+        <GenerationButton
+          disabled={!canValidate || validating}
+          tooltip={canValidate ? undefined : "Peignez au moins une zone"}
+          onClick={handleValidate}
+        >
+          {validating ? "Envoi du Masque…" : "Valider le Masque"}
+        </GenerationButton>
+        {validateError !== null && (
+          <p role="alert" aria-live="assertive" className="text-sm text-erreur">
+            {validateError}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

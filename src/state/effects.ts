@@ -1,4 +1,6 @@
 import { DETECT_BACKEND, detect, detectLocal, uploadArtifact } from "@/pipeline";
+import { encodeMaskPng } from "@/lib/mask-encode";
+import { isBufferEmpty } from "@/lib/mask-buffer";
 import type { GenerationAction } from "./reducer";
 import { isStepError, makeStepError } from "./step-error";
 import type { Generation, WaitPhase } from "./types";
@@ -65,4 +67,29 @@ export async function runDetect(
       error: isStepError(err) ? err : makeStepError("detect", true),
     });
   }
+}
+
+/**
+ * Validates the mask draft (AD-13): encode the binary buffer to the verbatim PNG
+ * (AD-7), upload it, and store the URL in generation.mask while advancing to
+ * Pièce vide (MASK_VALIDATED). User-initiated (button), so errors are surfaced
+ * inline by the caller — this THROWS instead of dispatching SET_ERROR, because a
+ * mask-upload failure is outside the detect/inpaint/video StepError taxonomy.
+ * Only dispatches when the run is still live (AD-12). AR-LAYERS: the pipeline
+ * call lives here, never in the component.
+ */
+export async function runValidateMask(
+  state: Generation,
+  dispatch: Dispatch,
+  { signal, isStale }: RunContext,
+): Promise<void> {
+  const buffer = state.maskDraft?.buffer;
+  if (buffer === undefined || isBufferEmpty(buffer)) return; // guarded by the UI too
+  const dead = () => signal.aborted || isStale();
+
+  const png = await encodeMaskPng(buffer);
+  if (dead()) return; // navigated away during encode — skip the upload round-trip
+  const maskUrl = await uploadArtifact(png);
+  if (dead()) return; // navigated away / superseded — don't force the advance
+  dispatch({ type: "MASK_VALIDATED", maskUrl });
 }

@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local Grounded-SAM service (Python) — its venv bundles vendored JS.
+    "local-detect/**",
   ]),
 ]);
 

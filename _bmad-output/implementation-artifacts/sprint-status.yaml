@@ -59,7 +59,7 @@ development_status:
   epic-2: in-progress
   2-1-frontiere-pipeline-detection-automatique-du-masque: done
   2-2-edition-manuelle-du-masque-au-pinceau-et-a-la-gomme: done
-  2-3-validation-du-masque-contrat-verbatim-vers-l-inpainting: backlog
+  2-3-validation-du-masque-contrat-verbatim-vers-l-inpainting: done
   2-4-fallback-aucun-meuble-detecte: backlog
   epic-2-retrospective: optional
   epic-3: backlog

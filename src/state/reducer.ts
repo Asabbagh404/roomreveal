@@ -27,6 +27,7 @@ export type GenerationAction =
   | { type: "DETECTION_UPLOADED"; falUrl: string }
   | { type: "DETECT_SUCCEEDED"; detectedMaskUrl: string | null }
   | { type: "SET_MASK_BUFFER"; buffer: MaskBuffer }
+  | { type: "MASK_VALIDATED"; maskUrl: string }
   | { type: "GO_TO_STEP"; step: Step }
   | { type: "CONFIRM_ADVANCE_FROM"; step: Step }
   | { type: "SET_WAIT_PHASE"; phase: WaitPhase }
@@ -125,6 +126,27 @@ export function generationReducer(
       return {
         ...state,
         maskDraft: { ...state.maskDraft, buffer: action.buffer },
+      };
+
+    case "MASK_VALIDATED":
+      // Ignore a validation that resolves after the user already left the mask
+      // step (e.g. GO_TO_STEP back-nav mid-upload — which does NOT bump epoch, so
+      // the effect's staleness guard can't catch it): never yank them forward.
+      if (state.step !== "mask") return state;
+      // Encode+upload done in effects; store the fal URL of the verbatim mask
+      // (AD-13) and advance to Pièce vide. invalidateDownstream("mask") clears
+      // emptyRoom+reveal but PRESERVES maskDraft+mask — it uses a STRICT `<`, so
+      // the "mask" step's own artifacts survive (back-nav re-shows the draft,
+      // FR-15/AD-13; do NOT relax to `<=`). epoch bumps to discard any in-flight
+      // downstream job (AD-11/12).
+      return {
+        ...state,
+        ...invalidateDownstream("mask"),
+        mask: action.maskUrl,
+        step: "emptyRoom",
+        epoch: state.epoch + 1,
+        waitPhase: undefined,
+        error: undefined,
       };
 
     case "GO_TO_STEP":

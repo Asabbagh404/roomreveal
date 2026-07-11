@@ -138,6 +138,59 @@ describe("generationReducer (pure, no mocks)", () => {
     );
   });
 
+  it("MASK_VALIDATED stores the mask URL, advances to emptyRoom, preserves the draft (AD-13)", () => {
+    const maskDraft = {
+      detectedMaskUrl: "fal://d",
+      buffer: { data: new Uint8Array(4), width: 2, height: 2 },
+    };
+    const state: Generation = {
+      step: "mask",
+      epoch: 3,
+      maskDraft,
+      emptyRoom: "fal://old-empty",
+      reveal: "fal://old-reveal",
+    };
+    const next = generationReducer(state, {
+      type: "MASK_VALIDATED",
+      maskUrl: "fal://mask",
+    });
+    expect(next.mask).toBe("fal://mask");
+    expect(next.step).toBe("emptyRoom");
+    expect(next.epoch).toBe(4);
+    expect(next.maskDraft).toBe(maskDraft); // draft kept for lossless back-nav
+    expect(next.emptyRoom).toBeUndefined(); // downstream invalidated (AD-11)
+    expect(next.reveal).toBeUndefined();
+  });
+
+  it("MASK_VALIDATED is a no-op once the user has left the mask step (B6 back-nav)", () => {
+    const state: Generation = {
+      step: "upload", // navigated back mid-upload
+      epoch: 3,
+      maskDraft: { detectedMaskUrl: "d", buffer: { data: new Uint8Array(4), width: 2, height: 2 } },
+    };
+    expect(
+      generationReducer(state, { type: "MASK_VALIDATED", maskUrl: "fal://mask" }),
+    ).toBe(state); // unchanged — not yanked forward
+  });
+
+  it("MASK_VALIDATED on re-validation overwrites the mask and re-invalidates downstream", () => {
+    const state: Generation = {
+      step: "mask",
+      epoch: 5,
+      mask: "fal://old-mask",
+      maskDraft: { detectedMaskUrl: "d", buffer: { data: new Uint8Array(4), width: 2, height: 2 } },
+      emptyRoom: "fal://empty",
+    };
+    const next = generationReducer(state, {
+      type: "MASK_VALIDATED",
+      maskUrl: "fal://new-mask",
+    });
+    expect(next.mask).toBe("fal://new-mask"); // overwritten cleanly
+    expect(next.emptyRoom).toBeUndefined(); // downstream re-invalidated
+    expect(next.step).toBe("emptyRoom");
+    expect(next.epoch).toBe(6);
+  });
+
   it("CONFIRM_ADVANCE_FROM upload also invalidates the mask draft", () => {
     const next = generationReducer(fullGeneration(), {
       type: "CONFIRM_ADVANCE_FROM",
