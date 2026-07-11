@@ -136,6 +136,7 @@ claude-fable-5 (Claude Fable 5)
 
 - 2026-07-11 : Story 2.1 implémentée — proxy fal, registre pipeline, adaptateur `detect`, couche `effects`, surface Masque. 66 tests. Statut → review.
 - 2026-07-11 : Revue adversariale (3 couches, AC4 PASS / AC1-3 PARTIAL). 12 correctifs, 71 tests verts, story → done.
+- 2026-07-11 : **Vérification fal live** (`FAL_KEY` fournie). Pipeline validé de bout en bout (upload → storage → détection queue → overlay). Deux calibrations : (1) prompt SAM 3 = `"furniture"` (la liste FR ne segmentait rien) ; (2) **détection sur copie 1536 px** — SAM 3 renvoie 0 masque ≤ 1024 px (taille, pas qualité : PNG lossless 1024 échoue aussi). Amendement AD-2 documenté (détection 1536, masque réduit aux dims canoniques en Story 2.2 ; pipeline reste 1024). Overlay fuchsia rendu live, CORS du masque OK. 72 tests verts.
 
 ## Senior Developer Review (AI)
 

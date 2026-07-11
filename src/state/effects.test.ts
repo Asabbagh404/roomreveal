@@ -15,7 +15,7 @@ function baseState(overrides: Partial<Generation> = {}): Generation {
   return {
     step: "mask",
     epoch: 1,
-    originalPhoto: { blob: new Blob(["p"]) },
+    originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]) },
     ...overrides,
   };
 }
@@ -29,8 +29,8 @@ afterEach(() => {
 });
 
 describe("runDetect (AD-12 orchestration)", () => {
-  it("uploads the photo once, then dispatches PHOTO_UPLOADED and DETECT_SUCCEEDED", async () => {
-    uploadArtifact.mockResolvedValue("https://fal/photo.jpg");
+  it("uploads the detection copy once, then dispatches DETECTION_UPLOADED and DETECT_SUCCEEDED", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/detect.jpg");
     detect.mockResolvedValue({ initialMask: "https://fal/mask.png", categories: [] });
     const dispatch = vi.fn();
 
@@ -38,8 +38,8 @@ describe("runDetect (AD-12 orchestration)", () => {
 
     expect(uploadArtifact).toHaveBeenCalledOnce();
     expect(dispatch).toHaveBeenCalledWith({
-      type: "PHOTO_UPLOADED",
-      falUrl: "https://fal/photo.jpg",
+      type: "DETECTION_UPLOADED",
+      falUrl: "https://fal/detect.jpg",
     });
     expect(dispatch).toHaveBeenCalledWith({
       type: "DETECT_SUCCEEDED",
@@ -47,17 +47,21 @@ describe("runDetect (AD-12 orchestration)", () => {
     });
   });
 
-  it("skips the upload when the photo already has a fal URL (memoized)", async () => {
+  it("skips the upload when the detection copy already has a fal URL (memoized)", async () => {
     detect.mockResolvedValue({ initialMask: null, categories: [] });
     const dispatch = vi.fn();
     const state = baseState({
-      originalPhoto: { blob: new Blob(["p"]), falUrl: "https://fal/photo.jpg" },
+      originalPhoto: {
+        blob: new Blob(["p"]),
+        detectionBlob: new Blob(["d"]),
+        detectionFalUrl: "https://fal/detect.jpg",
+      },
     });
 
     await runDetect(state, dispatch, { signal, isStale: notStale });
 
     expect(uploadArtifact).not.toHaveBeenCalled();
-    expect(detect).toHaveBeenCalledWith("https://fal/photo.jpg", expect.anything());
+    expect(detect).toHaveBeenCalledWith("https://fal/detect.jpg", expect.anything());
   });
 
   it("drops a result that goes stale mid-flight (epoch bumped after detect starts)", async () => {

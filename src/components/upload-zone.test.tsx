@@ -4,14 +4,17 @@ import { UploadZone } from "./upload-zone";
 import { Stepper } from "./stepper";
 import { GenerationProvider } from "@/state/generation-context";
 import { UPLOAD_MESSAGES } from "@/lib/validate-upload";
-import { resizeToCanonicalJpeg } from "@/lib/resize";
+import { normalizeUpload } from "@/lib/resize";
 
-// Canvas is unavailable in jsdom — mock the browser-only resize primitive.
+// Canvas is unavailable in jsdom — mock the browser-only normalize primitive.
 vi.mock("@/lib/resize", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/resize")>();
   return {
     ...actual,
-    resizeToCanonicalJpeg: vi.fn(async () => new Blob(["jpeg"], { type: "image/jpeg" })),
+    normalizeUpload: vi.fn(async () => ({
+      canonical: new Blob(["jpeg"], { type: "image/jpeg" }),
+      detection: new Blob(["jpeg-hires"], { type: "image/jpeg" }),
+    })),
   };
 });
 
@@ -53,9 +56,7 @@ describe("UploadZone (FR-1/2/3, AC1/2/4)", () => {
   });
 
   it("shows the unusable message when the image cannot be decoded (corruption path)", async () => {
-    vi.mocked(resizeToCanonicalJpeg).mockRejectedValueOnce(
-      new Error("decode failed"),
-    );
+    vi.mocked(normalizeUpload).mockRejectedValueOnce(new Error("decode failed"));
     renderWithParcours();
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(input, { target: { files: [fileOfType("image/jpeg")] } });

@@ -52,10 +52,16 @@ export const PIPELINE_STEP_TO_PARCOURS: Record<PipelineStep, Step> = {
   video: "video",
 };
 
-/** The uploaded canonical photo: a local Blob, optionally uploaded to fal. */
+/**
+ * The uploaded photo. `blob` is the canonical image (<=1024) the pipeline
+ * shares (AD-2); `detectionBlob` is the higher-res copy (<=1536) used only for
+ * detection (AD-2 amendment). Each is uploaded lazily and its fal URL memoized.
+ */
 export interface OriginalPhoto {
   blob: Blob;
   falUrl?: string;
+  detectionBlob: Blob;
+  detectionFalUrl?: string;
 }
 
 /**

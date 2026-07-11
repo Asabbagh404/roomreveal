@@ -33,16 +33,18 @@ export async function runDetect(
   const dead = () => signal.aborted || isStale();
 
   try {
-    // Upload the canonical photo once per attempt; reuse the memoized URL.
-    let photoUrl = photo.falUrl;
-    if (photoUrl === undefined) {
+    // Detection runs on the higher-res copy (AD-2 amendment); upload it once
+    // per attempt and reuse the memoized URL. The canonical photo is uploaded
+    // later, when inpaint needs it (Epic 3).
+    let detectionUrl = photo.detectionFalUrl;
+    if (detectionUrl === undefined) {
       if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase: "uploading" });
-      photoUrl = await uploadArtifact(photo.blob);
+      detectionUrl = await uploadArtifact(photo.detectionBlob);
       if (dead()) return;
-      dispatch({ type: "PHOTO_UPLOADED", falUrl: photoUrl });
+      dispatch({ type: "DETECTION_UPLOADED", falUrl: detectionUrl });
     }
 
-    const result = await detect(photoUrl, {
+    const result = await detect(detectionUrl, {
       signal,
       onPhase: (phase) => {
         if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase });

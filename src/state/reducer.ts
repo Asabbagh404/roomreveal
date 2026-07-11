@@ -23,6 +23,7 @@ export const initialGeneration: Generation = {
 export type GenerationAction =
   | { type: "PHOTO_NORMALIZED"; photo: OriginalPhoto }
   | { type: "PHOTO_UPLOADED"; falUrl: string }
+  | { type: "DETECTION_UPLOADED"; falUrl: string }
   | { type: "DETECT_SUCCEEDED"; detectedMaskUrl: string | null }
   | { type: "GO_TO_STEP"; step: Step }
   | { type: "CONFIRM_ADVANCE_FROM"; step: Step }
@@ -85,6 +86,17 @@ export function generationReducer(
       return {
         ...state,
         originalPhoto: { ...state.originalPhoto, falUrl: action.falUrl },
+      };
+
+    case "DETECTION_UPLOADED":
+      // Memoize the fal URL of the higher-res detection copy (AD-2 amendment).
+      if (state.originalPhoto === undefined) return state;
+      return {
+        ...state,
+        originalPhoto: {
+          ...state.originalPhoto,
+          detectionFalUrl: action.falUrl,
+        },
       };
 
     case "DETECT_SUCCEEDED":

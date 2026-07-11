@@ -3,7 +3,7 @@
 import { ImageUp } from "lucide-react";
 import { useRef, useState } from "react";
 import { useGeneration } from "@/state/generation-context";
-import { resizeToCanonicalJpeg } from "@/lib/resize";
+import { normalizeUpload } from "@/lib/resize";
 import { UPLOAD_MESSAGES, validateUploadFile } from "@/lib/validate-upload";
 import { cn } from "@/lib/utils";
 
@@ -32,9 +32,13 @@ export function UploadZone() {
     }
     setBusy(true);
     try {
-      // Single canonical re-encode (AD-2); the original File is dropped here.
-      const blob = await resizeToCanonicalJpeg(file);
-      dispatch({ type: "PHOTO_NORMALIZED", photo: { blob } });
+      // Single decode → canonical (pipeline) + detection (higher-res) JPEGs
+      // (AD-2 + amendment); the original File is dropped here.
+      const { canonical, detection } = await normalizeUpload(file);
+      dispatch({
+        type: "PHOTO_NORMALIZED",
+        photo: { blob: canonical, detectionBlob: detection },
+      });
     } catch {
       setError(UPLOAD_MESSAGES.unusable);
       buttonRef.current?.focus();

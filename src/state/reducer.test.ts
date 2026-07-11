@@ -7,7 +7,12 @@ function fullGeneration(): Generation {
   return {
     step: "video",
     epoch: 2,
-    originalPhoto: { blob: new Blob(["x"]), falUrl: "fal://photo" },
+    originalPhoto: {
+      blob: new Blob(["x"]),
+      falUrl: "fal://photo",
+      detectionBlob: new Blob(["d"]),
+      detectionFalUrl: "fal://detect",
+    },
     maskDraft: { detectedMaskUrl: "fal://mask" },
     mask: "fal://mask",
     emptyRoom: "fal://empty",
@@ -21,7 +26,7 @@ describe("generationReducer (pure, no mocks)", () => {
   });
 
   it("PHOTO_NORMALIZED sets originalPhoto and advances to mask", () => {
-    const photo = { blob: new Blob(["p"]) };
+    const photo = { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]) };
     const next = generationReducer(initialGeneration, {
       type: "PHOTO_NORMALIZED",
       photo,
@@ -32,7 +37,7 @@ describe("generationReducer (pure, no mocks)", () => {
 
   it("PHOTO_NORMALIZED on a re-upload drops stale downstream artifacts and bumps epoch (AD-11/AD-12)", () => {
     const state = fullGeneration();
-    const photo = { blob: new Blob(["new"]) };
+    const photo = { blob: new Blob(["new"]), detectionBlob: new Blob(["d"]) };
     const next = generationReducer(state, { type: "PHOTO_NORMALIZED", photo });
     expect(next.originalPhoto).toBe(photo);
     expect(next.step).toBe("mask");
@@ -53,11 +58,11 @@ describe("generationReducer (pure, no mocks)", () => {
     expect(next.waitPhase).toBeUndefined();
   });
 
-  it("PHOTO_UPLOADED memoizes the fal URL on the existing photo", () => {
+  it("PHOTO_UPLOADED memoizes the canonical fal URL on the existing photo", () => {
     const state: Generation = {
       step: "mask",
       epoch: 1,
-      originalPhoto: { blob: new Blob(["p"]) },
+      originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]) },
     };
     const next = generationReducer(state, {
       type: "PHOTO_UPLOADED",
@@ -67,11 +72,25 @@ describe("generationReducer (pure, no mocks)", () => {
     expect(next.originalPhoto?.blob).toBe(state.originalPhoto?.blob);
   });
 
+  it("DETECTION_UPLOADED memoizes the detection fal URL", () => {
+    const state: Generation = {
+      step: "mask",
+      epoch: 1,
+      originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]) },
+    };
+    const next = generationReducer(state, {
+      type: "DETECTION_UPLOADED",
+      falUrl: "fal://detect",
+    });
+    expect(next.originalPhoto?.detectionFalUrl).toBe("fal://detect");
+    expect(next.originalPhoto?.falUrl).toBeUndefined();
+  });
+
   it("DETECT_SUCCEEDED seeds maskDraft and clears the wait phase", () => {
     const state: Generation = {
       step: "mask",
       epoch: 1,
-      originalPhoto: { blob: new Blob(["p"]) },
+      originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]) },
       waitPhase: "generating",
     };
     const next = generationReducer(state, {
@@ -86,7 +105,7 @@ describe("generationReducer (pure, no mocks)", () => {
     const state: Generation = {
       step: "mask",
       epoch: 1,
-      originalPhoto: { blob: new Blob(["p"]) },
+      originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]) },
       waitPhase: "generating",
     };
     const next = generationReducer(state, {
