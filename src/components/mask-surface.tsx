@@ -14,6 +14,7 @@ import {
 } from "@/lib/mask-buffer";
 import { rasterizeMaskUrl } from "@/lib/mask-raster";
 import { GenerationButton } from "@/components/generation-button";
+import { ErrorBanner } from "@/components/error-banner";
 import {
   canRedo as canRedoH,
   canUndo as canUndoH,
@@ -462,9 +463,20 @@ export function MaskSurface() {
   const aspectRatio =
     photoWidth > 0 && photoHeight > 0 ? `${photoWidth} / ${photoHeight}` : undefined;
   const h = history;
+  // No-furniture fallback (FR-16): detection ran but found nothing. NOT an error
+  // (AR-ERRORS) — a neutral banner; the blank buffer + default brush let the user
+  // paint manually (Story 2.4).
+  const noFurniture =
+    state.maskDraft !== undefined && state.maskDraft.detectedMaskUrl === null;
 
   return (
     <div className="flex w-full flex-col items-center gap-4">
+      {noFurniture && (
+        <ErrorBanner
+          variant="neutral"
+          message="Aucun meuble détecté. Peignez vous-même les zones à faire disparaître."
+        />
+      )}
       <div
         ref={viewportRef}
         className="relative w-full max-w-3xl touch-none overflow-hidden rounded-lg border border-bordure"

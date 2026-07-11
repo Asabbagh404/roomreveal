@@ -28,7 +28,7 @@ type ErrorBannerProps =
     }
   | {
       variant: "neutral";
-      /** Informational line ("aucun meuble détecté", AC4/FR-16). */
+      /** Informational line ("aucun meuble détecté", FR-16). */
       message: string;
       step?: never;
       onRetry?: never;
@@ -37,8 +37,8 @@ type ErrorBannerProps =
 /**
  * Bandeau d'erreur (UX-DR12). Renders a single French message and, for real
  * errors, exactly one action: retry the affected step. Never a technical trace.
- * The "aucun meuble détecté" case is a neutral variant, not an error (AC4).
- * Overlays the scene without hiding already-acquired artifacts (AC3).
+ * The "aucun meuble détecté" case is a neutral variant, not an error (FR-16,
+ * Story 2.4). Overlays the scene without hiding already-acquired artifacts.
  */
 export function ErrorBanner(props: ErrorBannerProps) {
   const isError = props.variant === "error";

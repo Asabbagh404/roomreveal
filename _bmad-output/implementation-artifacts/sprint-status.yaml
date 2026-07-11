@@ -56,11 +56,11 @@ development_status:
   1-3-etape-upload-depot-validation-normalisation: done
   1-4-infrastructure-transverse-attente-erreur: done
   epic-1-retrospective: optional
-  epic-2: in-progress
+  epic-2: done
   2-1-frontiere-pipeline-detection-automatique-du-masque: done
   2-2-edition-manuelle-du-masque-au-pinceau-et-a-la-gomme: done
   2-3-validation-du-masque-contrat-verbatim-vers-l-inpainting: done
-  2-4-fallback-aucun-meuble-detecte: backlog
+  2-4-fallback-aucun-meuble-detecte: done
   epic-2-retrospective: optional
   epic-3: backlog
   3-1-generation-de-la-piece-vide: backlog
