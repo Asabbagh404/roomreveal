@@ -37,13 +37,26 @@ BOX_THRESHOLD = 0.3   # Grounding DINO detection confidence
 TEXT_THRESHOLD = 0.25
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# --- Load models once at startup -----------------------------------------
-print(f"[local-detect] loading models on {DEVICE} ...")
-gdino_processor = AutoProcessor.from_pretrained(GDINO_ID)
-gdino_model = AutoModelForZeroShotObjectDetection.from_pretrained(GDINO_ID).to(DEVICE)
-sam_processor = SamProcessor.from_pretrained(SAM_ID)
-sam_model = SamModel.from_pretrained(SAM_ID).to(DEVICE)
-print("[local-detect] models ready.")
+# --- Lazy model loading ---------------------------------------------------
+# Loaded on the FIRST /detect (not at import) so uvicorn binds the port
+# immediately — otherwise the first-run weight download (~1–2 GB) would keep the
+# port closed and the browser would see ERR_CONNECTION_REFUSED. /health works
+# right away; the first detection is slow once, then cached.
+_models: dict = {}
+
+
+def _ensure_models() -> dict:
+    if not _models:
+        print(f"[local-detect] loading models on {DEVICE} (first request) ...")
+        _models["gdino_processor"] = AutoProcessor.from_pretrained(GDINO_ID)
+        _models["gdino_model"] = AutoModelForZeroShotObjectDetection.from_pretrained(
+            GDINO_ID
+        ).to(DEVICE)
+        _models["sam_processor"] = SamProcessor.from_pretrained(SAM_ID)
+        _models["sam_model"] = SamModel.from_pretrained(SAM_ID).to(DEVICE)
+        print("[local-detect] models ready.")
+    return _models
+
 
 app = FastAPI(title="RoomReveal local detection")
 # Dev CORS: the Next app (localhost:3000) fetches this directly from the browser.
@@ -57,17 +70,17 @@ app.add_middleware(
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "device": DEVICE}
+    return {"status": "ok", "device": DEVICE, "models_loaded": bool(_models)}
 
 
-def _detect_boxes(image: Image.Image, prompts: list[str]) -> torch.Tensor:
+def _detect_boxes(m: dict, image: Image.Image, prompts: list[str]) -> torch.Tensor:
     """Grounding DINO over all concepts at once -> xyxy boxes (may be empty)."""
     # GDINO convention: lowercase concepts, each ended by " . ".
     text = " . ".join(p.strip().lower() for p in prompts if p.strip()) + " ."
-    inputs = gdino_processor(images=image, text=text, return_tensors="pt").to(DEVICE)
+    inputs = m["gdino_processor"](images=image, text=text, return_tensors="pt").to(DEVICE)
     with torch.no_grad():
-        outputs = gdino_model(**inputs)
-    results = gdino_processor.post_process_grounded_object_detection(
+        outputs = m["gdino_model"](**inputs)
+    results = m["gdino_processor"].post_process_grounded_object_detection(
         outputs,
         inputs.input_ids,
         box_threshold=BOX_THRESHOLD,
@@ -77,15 +90,15 @@ def _detect_boxes(image: Image.Image, prompts: list[str]) -> torch.Tensor:
     return results[0]["boxes"]  # tensor [n, 4] xyxy
 
 
-def _segment_union(image: Image.Image, boxes: torch.Tensor) -> np.ndarray:
+def _segment_union(m: dict, image: Image.Image, boxes: torch.Tensor) -> np.ndarray:
     """SAM over every box -> union of the masks as a bool array [H, W]."""
     # SamProcessor input_boxes shape: (batch, nb_boxes, 4) -> one image, N boxes.
-    inputs = sam_processor(
+    inputs = m["sam_processor"](
         image, input_boxes=[boxes.tolist()], return_tensors="pt"
     ).to(DEVICE)
     with torch.no_grad():
-        outputs = sam_model(**inputs)
-    masks = sam_processor.image_processor.post_process_masks(
+        outputs = m["sam_model"](**inputs)
+    masks = m["sam_processor"].image_processor.post_process_masks(
         outputs.pred_masks.cpu(),
         inputs["original_sizes"].cpu(),
         inputs["reshaped_input_sizes"].cpu(),
@@ -101,14 +114,15 @@ def _segment_union(image: Image.Image, boxes: torch.Tensor) -> np.ndarray:
 
 @app.post("/detect")
 async def detect(image: UploadFile = File(...), prompts: str = Form(...)) -> Response:
+    m = _ensure_models()
     concepts = json.loads(prompts)
     pil = Image.open(io.BytesIO(await image.read())).convert("RGB")
 
-    boxes = _detect_boxes(pil, concepts)
+    boxes = _detect_boxes(m, pil, concepts)
     if boxes.numel() == 0:
         return Response(status_code=204)  # no furniture (FR-16)
 
-    union = _segment_union(pil, boxes)
+    union = _segment_union(m, pil, boxes)
     if not union.any():
         return Response(status_code=204)
 

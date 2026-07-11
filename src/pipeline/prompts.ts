@@ -22,9 +22,6 @@
  * user-editable afterwards (FR-6/FR-7), so a strong broad concept as the
  * starting point is the right trade-off.
  *
- * [Future idea] To exploit the full FURNITURE_CATEGORIES list without paying fal
- * per concept, run the per-category loop on a self-hosted / HuggingFace SAM and
- * union the masks locally, then feed only the unioned mask into the pipeline.
  */
 export const SAM_DETECT_PROMPT = "kitchen furniture";
 

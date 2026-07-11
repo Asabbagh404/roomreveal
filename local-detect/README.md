@@ -32,7 +32,31 @@ First run downloads the model weights (~1–2 GB) from the HuggingFace Hub.
 uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
-Check it: `curl http://localhost:8000/health` → `{"status":"ok","device":"cuda"}`.
+Models load lazily on the **first** `/detect` (not at startup), so the server
+binds the port immediately. Check it's up right away:
+
+```bash
+curl http://localhost:8000/health
+# {"status":"ok","device":"cuda","models_loaded":false}   <- loads on first detect
+```
+
+## Troubleshooting
+
+**`POST http://localhost:8000/detect net::ERR_CONNECTION_REFUSED`** — nothing is
+listening on :8000. Either the server isn't started, crashed on startup, or is
+on another port/host. Checklist:
+
+1. Is `uvicorn` actually running? `curl http://localhost:8000/health` should
+   answer. If it doesn't, read the uvicorn terminal for a traceback.
+2. Common startup failures: `torch` not installed / wrong CUDA build, or a
+   `transformers` API mismatch — `pip show torch transformers` and re-run.
+3. Port taken? Run on another port and update `NEXT_PUBLIC_LOCAL_DETECT_URL`
+   (then restart `npm run dev`).
+4. Remember the app only uses this when `NEXT_PUBLIC_DETECT_BACKEND=local` AND
+   `npm run dev` was **restarted** after setting it.
+
+The app treats an unreachable service as a retryable detection error, so you'll
+see the "Relancer la détection" banner — fix the server, then retry.
 
 ## Point the app at it
 
