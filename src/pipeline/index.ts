@@ -4,4 +4,6 @@
  */
 export { uploadArtifact } from "./client";
 export { detect } from "./detect";
+export { detectLocal } from "./detect-local";
+export { DETECT_BACKEND } from "./config";
 export type { AdapterOptions, DetectResult } from "./types";

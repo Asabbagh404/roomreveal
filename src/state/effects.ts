@@ -1,7 +1,7 @@
-import { detect, uploadArtifact } from "@/pipeline";
+import { DETECT_BACKEND, detect, detectLocal, uploadArtifact } from "@/pipeline";
 import type { GenerationAction } from "./reducer";
 import { isStepError, makeStepError } from "./step-error";
-import type { Generation } from "./types";
+import type { Generation, WaitPhase } from "./types";
 
 type Dispatch = (action: GenerationAction) => void;
 
@@ -31,25 +31,30 @@ export async function runDetect(
   if (photo === undefined) return;
 
   const dead = () => signal.aborted || isStale();
+  const onPhase = (phase: WaitPhase) => {
+    if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase });
+  };
 
   try {
-    // Detection runs on the higher-res copy (AD-2 amendment); upload it once
-    // per attempt and reuse the memoized URL. The canonical photo is uploaded
-    // later, when inpaint needs it (Epic 3).
-    let detectionUrl = photo.detectionFalUrl;
-    if (detectionUrl === undefined) {
-      if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase: "uploading" });
-      detectionUrl = await uploadArtifact(photo.detectionBlob);
-      if (dead()) return;
-      dispatch({ type: "DETECTION_UPLOADED", falUrl: detectionUrl });
+    let result;
+    if (DETECT_BACKEND === "local") {
+      // Local Grounded-SAM: no fal upload — POST the detection blob straight to
+      // the self-hosted service, which loops over all concepts and unions the
+      // masks for free (detect-local.ts).
+      result = await detectLocal(photo.detectionBlob, { signal, onPhase });
+    } else {
+      // Detection runs on the higher-res copy (AD-2 amendment); upload it once
+      // per attempt and reuse the memoized URL. The canonical photo is uploaded
+      // later, when inpaint needs it (Epic 3).
+      let detectionUrl = photo.detectionFalUrl;
+      if (detectionUrl === undefined) {
+        if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase: "uploading" });
+        detectionUrl = await uploadArtifact(photo.detectionBlob);
+        if (dead()) return;
+        dispatch({ type: "DETECTION_UPLOADED", falUrl: detectionUrl });
+      }
+      result = await detect(detectionUrl, { signal, onPhase });
     }
-
-    const result = await detect(detectionUrl, {
-      signal,
-      onPhase: (phase) => {
-        if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase });
-      },
-    });
     if (dead()) return; // superseded or cancelled — drop the result
 
     dispatch({ type: "DETECT_SUCCEEDED", detectedMaskUrl: result.initialMask });

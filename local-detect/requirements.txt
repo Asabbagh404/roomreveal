@@ -1,0 +1,11 @@
+# RoomReveal local detection service (Grounding DINO + SAM).
+# For GPU, install a CUDA build of torch first, e.g.:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+fastapi
+uvicorn[standard]
+python-multipart
+torch
+transformers>=4.40
+pillow
+numpy
+accelerate

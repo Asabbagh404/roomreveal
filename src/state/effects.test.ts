@@ -2,9 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Mock the pipeline at the adapter boundary (AR-TESTS) — never mock @fal-ai/client here.
 const detect = vi.fn();
+const detectLocal = vi.fn();
 const uploadArtifact = vi.fn();
 vi.mock("@/pipeline", () => ({
+  DETECT_BACKEND: "fal", // these tests cover the default (fal) orchestration path
   detect: (...a: unknown[]) => detect(...a),
+  detectLocal: (...a: unknown[]) => detectLocal(...a),
   uploadArtifact: (...a: unknown[]) => uploadArtifact(...a),
 }));
 

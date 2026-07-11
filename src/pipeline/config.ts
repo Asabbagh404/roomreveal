@@ -34,6 +34,23 @@ export const DETECT_MAX_MASKS = 20;
 export const PROXY_URL = "/api/fal/proxy";
 
 /**
+ * Detection backend. Default is fal (hosted SAM 3). Set
+ * `NEXT_PUBLIC_DETECT_BACKEND=local` to route detection to a self-hosted
+ * Grounded-SAM service instead — which can loop over every FURNITURE_CATEGORIES
+ * concept and union the masks for free (no per-call fal cost). NEXT_PUBLIC_* is
+ * inlined at build; the local URL is a localhost dev endpoint, not a secret.
+ */
+export const DETECT_BACKEND: "fal" | "local" =
+  process.env.NEXT_PUBLIC_DETECT_BACKEND === "local" ? "local" : "fal";
+
+/** Base URL of the local Grounded-SAM service (used only when DETECT_BACKEND === "local"). */
+export const LOCAL_DETECT_URL =
+  process.env.NEXT_PUBLIC_LOCAL_DETECT_URL ?? "http://localhost:8000/detect";
+
+/** Local detection can run ~14 concepts through two models — allow more time. */
+export const LOCAL_DETECT_TIMEOUT_MS = 180_000;
+
+/**
  * Endpoints the proxy allows (AR-PROXY). Passed to the fal server-proxy as its
  * `allowedEndpoints` allowlist — any POST to a model outside this set is refused
  * by the proxy. Glob syntax (picomatch). Storage/queue endpoints are covered by
