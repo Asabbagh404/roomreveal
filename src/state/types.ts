@@ -59,11 +59,15 @@ export interface OriginalPhoto {
 }
 
 /**
- * The mask draft buffer (AD-13). Its definitive shape is owned by Epic 2; here
- * it is an opaque carrier so back-navigation can preserve it. Never uploaded or
- * encoded in this story.
+ * The mask draft (AD-13), owned by the reducer so it survives component
+ * unmount/remount. Story 2.1 seeds it from detection; Story 2.2 extends it with
+ * the editable binary buffer. `detectedMaskUrl === null` means detection found
+ * no furniture (FR-16). Its presence also marks "detection has run" for this
+ * attempt, so the effect layer does not re-run detect on every render.
  */
-export type MaskDraft = unknown;
+export interface MaskDraft {
+  detectedMaskUrl: string | null;
+}
 
 /**
  * The single Generation object held by the reducer (AD-3). The server holds no

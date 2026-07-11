@@ -22,6 +22,8 @@ export const initialGeneration: Generation = {
  */
 export type GenerationAction =
   | { type: "PHOTO_NORMALIZED"; photo: OriginalPhoto }
+  | { type: "PHOTO_UPLOADED"; falUrl: string }
+  | { type: "DETECT_SUCCEEDED"; detectedMaskUrl: string | null }
   | { type: "GO_TO_STEP"; step: Step }
   | { type: "CONFIRM_ADVANCE_FROM"; step: Step }
   | { type: "SET_WAIT_PHASE"; phase: WaitPhase }
@@ -34,13 +36,17 @@ function stepIndex(step: Step): number {
 
 /** Clears every artifact strictly downstream of `step` (AD-11). */
 function invalidateDownstream(
-  state: Generation,
+  _: Generation,
   step: Step,
 ): Partial<Generation> {
   const from = stepIndex(step);
   const cleared: Partial<Generation> = {};
-  // mask belongs to the "mask" step, emptyRoom to "emptyRoom", reveal to "video".
-  if (from < stepIndex("mask")) cleared.mask = undefined;
+  // maskDraft + mask belong to the "mask" step, emptyRoom to "emptyRoom",
+  // reveal to "video".
+  if (from < stepIndex("mask")) {
+    cleared.maskDraft = undefined;
+    cleared.mask = undefined;
+  }
   if (from < stepIndex("emptyRoom")) cleared.emptyRoom = undefined;
   if (from < stepIndex("video")) cleared.reveal = undefined;
   return cleared;
@@ -74,6 +80,24 @@ export function generationReducer(
         epoch: state.epoch + 1,
         error: undefined,
         waitPhase: undefined,
+      };
+
+    case "PHOTO_UPLOADED":
+      // Memoize the fal URL of the canonical photo (uploaded once per attempt).
+      if (state.originalPhoto === undefined) return state;
+      return {
+        ...state,
+        originalPhoto: { ...state.originalPhoto, falUrl: action.falUrl },
+      };
+
+    case "DETECT_SUCCEEDED":
+      // Seed the mask draft from detection; its presence marks "detection ran".
+      // A null detectedMaskUrl is the no-furniture case (FR-16), not an error.
+      return {
+        ...state,
+        maskDraft: { detectedMaskUrl: action.detectedMaskUrl },
+        waitPhase: undefined,
+        error: undefined,
       };
 
     case "GO_TO_STEP":

@@ -366,3 +366,185 @@ So that le Parcours reste praticable au lieu de me bloquer.
 **Given** un Masque vierge non peint dans le cas fallback
 **When** l'utilisateur n'a rien peint
 **Then** « Valider le Masque » reste désactivé et l'utilisateur peut revenir à l'étape Upload pour changer de photo — jamais d'état sans issue (FR-16, Flow 2)
+
+## Epic 3: Pièce vide (Inpainting) & régénération
+
+À la fin de cet epic, l'utilisateur obtient la Pièce vide générée à partir de son Masque validé, la compare côte à côte avec sa Photo originale pour juger qu'aucun meuble ne subsiste, et régénère librement jusqu'à satisfaction. C'est l'epic qui valide le risque de qualité du déclutter (SM-2) et prépare la première frame de la Génération FLF.
+
+### Story 3.1: Génération de la Pièce vide
+
+As a utilisateur,
+I want que les meubles surlignés dans mon Masque disparaissent pour révéler la pièce nue,
+So that j'obtienne la première frame de ma future Révélation.
+
+**Acceptance Criteria:**
+
+**Given** un Masque validé (URL dans `generation.mask`) et la Photo originale canonique
+**When** l'étape Pièce vide est atteinte
+**Then** la couche effectrice appelle l'adaptateur `inpaint(photoUrl, maskUrl)` via le proxy, avec `AbortSignal` et jeton d'époque, et le modèle `fal-ai/flux-pro/v1/fill` (repli `flux-2/klein/4b/base/edit`) est référencé par rôle dans `pipeline/config.ts` (FR-8, AR-PIPELINE, AR-MODELS, AR-ASYNC)
+**And** l'artefact Pièce vide vit sur le storage fal avec la rétention 24 h et son URL est stockée dans `generation.emptyRoom` (AR-EPHEMERAL)
+
+**Given** la génération de la Pièce vide en cours
+**When** elle dure plus de 2 secondes
+**Then** le Panneau d'attente affiche la phase nommée « Génération de la Pièce vide… » via `WaitPhase` (FR-14, AR-WAITPHASE)
+
+**Given** une Pièce vide générée
+**When** elle est produite
+**Then** les zones du Masque sont remplacées par un rendu plausible (sol, murs) sans meuble résiduel visible, et les zones hors Masque sont visuellement identiques à la Photo originale (FR-8)
+
+**Given** un appel d'inpainting
+**When** il échoue ou dépasse son délai (60 s)
+**Then** un `StepError { step: 'inpaint', retryable: true }` produit le Bandeau d'erreur, dont la relance conserve le Masque validé et la Photo originale (FR-17, AR-ERRORS)
+
+### Story 3.2: Comparaison côte à côte Photo originale / Pièce vide
+
+As a utilisateur,
+I want voir ma photo d'origine et la Pièce vide côte à côte,
+So that je juge d'un coup d'œil qu'aucun meuble ne subsiste avant de lancer la vidéo.
+
+**Acceptance Criteria:**
+
+**Given** une Pièce vide générée
+**When** l'étape Pièce vide s'affiche
+**Then** deux cartes de même taille « Photo originale » et « Pièce vide » sont présentées côte à côte, jamais l'une sans l'autre, légendes en `carton-titre` (FR-8, UX-DR9)
+
+**Given** les cartes de comparaison
+**When** l'utilisateur clique sur une carte
+**Then** elle s'ouvre en plein écran (`Dialog`) pour inspection détaillée (UX-DR9)
+
+**Given** l'étape Pièce vide jugée satisfaisante
+**When** l'utilisateur regarde l'action principale
+**Then** le Bouton de Génération « Créer ma vidéo » porte en sous-texte « 1 à 3 minutes de génération » (FR-14, UX-DR13)
+
+### Story 3.3: Régénération de la Pièce vide
+
+As a utilisateur exigeant,
+I want relancer l'Inpainting sans refaire les étapes précédentes,
+So that j'obtienne une Pièce vide propre quand la première ne me convient pas.
+
+**Acceptance Criteria:**
+
+**Given** une Pièce vide affichée
+**When** l'utilisateur clique « Régénérer »
+**Then** l'Inpainting est relancé avec le **même Masque validé**, sans repasser par les étapes précédentes, et le nouveau résultat remplace l'ancien sans historique de versions (FR-9, UX-DR)
+**And** la microcopie « Un doute ? Régénérez : chaque Pièce vide est unique. » est présente (UX-DR14)
+
+**Given** le nombre de régénérations
+**When** l'utilisateur régénère
+**Then** aucune limite n'est appliquée en v1 (FR-9)
+**And** « Régénérer » est un bouton secondaire ; « Créer ma vidéo » reste la seule action d'or de la surface (UX-DR13)
+
+**Given** une régénération de la Pièce vide
+**When** elle produit un nouveau résultat
+**Then** toute Révélation existante en aval est invalidée et le jeton d'époque incrémenté — une Révélation ne peut jamais coexister avec une Pièce vide qui n'est pas la sienne (FR-9, AR-INVALIDATION)
+
+## Epic 4: Révélation vidéo & clôture
+
+Le climax du produit. À la fin de cet epic, l'utilisateur lance la Génération FLF (première frame = Pièce vide, dernière frame = Photo originale intouchée), contemple sa Révélation en autoplay avec lueur or, la revoit, télécharge le MP4, et peut lancer une Nouvelle Génération. L'epic clôt aussi les livrables de process : coût unitaire documenté (README) et déploiement de l'instance démo. Il valide SM-1 et NFR-1.
+
+### Story 4.1: Génération de la Révélation (Génération FLF)
+
+As a utilisateur,
+I want lancer la génération de ma vidéo où les meubles atterrissent exactement à leur place,
+So that j'obtienne la Révélation cinématique qui fait tout l'intérêt du produit.
+
+**Acceptance Criteria:**
+
+**Given** une Pièce vide (`generation.emptyRoom`) et la Photo originale canonique
+**When** l'utilisateur clique « Créer ma vidéo »
+**Then** l'adaptateur `video(emptyRoomUrl, photoUrl)` est appelé via la queue fal (`fal.subscribe`) avec `AbortSignal` et jeton d'époque, en mode FLF strict : **première frame contrainte = Pièce vide, dernière frame contrainte = Photo originale** (FR-10, AD-1, AR-PIPELINE, AR-QUEUE, AR-ASYNC)
+**And** le modèle `fal-ai/kling-video/o1/image-to-video` (replis `wan/v2.7` `end_image_url` rendu obligatoire, ou `wan-flf2v`) est référencé par rôle dans `pipeline/config.ts`, et tout repli satisfait AD-1 (FLF strict) et AD-2 (ratio d'entrée préservé) (AR-MODELS)
+**And** le prompt de mouvement du preset « mix côtés + plafond » vit dans `pipeline/prompts.ts` (AR-PROMPTS)
+
+**Given** une Révélation générée
+**When** elle est produite
+**Then** sa dernière frame est visuellement identique à la Photo originale, sa première frame identique à la Pièce vide, et les meubles apparaissent en mouvement (flottement) — jamais par fondu ni apparition instantanée (FR-10, AD-1)
+**And** la vidéo dure ~5 s à ≥ 24 fps (framerate natif, sans transcodage), conserve le ratio de la photo canonique (jamais de crop 16:9 forcé), résolution ≤ 1080p (AR-PIXELS)
+
+**Given** la Génération FLF en cours (1–3 min)
+**When** l'utilisateur attend
+**Then** le Panneau d'attente affiche les phases nommées (« Envoi de vos images » → « Génération de la Révélation » → « Finalisation »), le temps écoulé, et l'annonce « 1 à 3 minutes » ; à 3 min 30 s le message « plus long que prévu » s'ajoute (FR-14, UX-DR11)
+
+**Given** un appel vidéo qui échoue ou dépasse son délai (~6 min)
+**When** l'erreur survient
+**Then** un `StepError { step: 'video', retryable: true }` produit le Bandeau d'erreur « La vidéo n'a pas abouti. Votre Masque et votre Pièce vide sont conservés — relancez quand vous voulez. » ; la relance ne repart jamais du début du Parcours (FR-17, Flow 3, AR-ERRORS)
+
+### Story 4.2: Lecteur & prévisualisation de la Révélation
+
+As a utilisateur,
+I want visionner ma Révélation dès qu'elle est prête,
+So that je savoure l'effet « wow » et vérifie le résultat avant de le télécharger.
+
+**Acceptance Criteria:**
+
+**Given** une Révélation prête (`generation.reveal`)
+**When** l'étape Vidéo s'affiche
+**Then** la vidéo se lance automatiquement dans le Lecteur de la Révélation, avec la lueur or autour du cadre au premier lancement (FR-11, UX-DR10)
+**And** le stepper affiche 4/4 coché
+
+**Given** le Lecteur de la Révélation
+**When** l'utilisateur interagit
+**Then** lecture/pause et relecture sont disponibles, `Espace` bascule lecture/pause (FR-11, UX-DR10)
+**And** la durée ~5 s et le preset ne sont ni exposés ni configurables dans l'UI (UX-DR10)
+
+**Given** la Révélation prête
+**When** le succès est affiché
+**Then** aucun confetti ni toast — la vidéo est la célébration (lueur or uniquement) (UX-DR15)
+
+### Story 4.3: Téléchargement du MP4
+
+As a utilisateur,
+I want télécharger ma Révélation en MP4,
+So that je puisse la publier ou la montrer hors de l'application.
+
+**Acceptance Criteria:**
+
+**Given** une Révélation prête
+**When** l'utilisateur clique « Télécharger le MP4 »
+**Then** le fichier est récupéré depuis l'URL fal (fetch client → Blob → objectURL, jamais re-hébergé côté serveur) et téléchargé (FR-12, AR-EPHEMERAL)
+
+**Given** le MP4 téléchargé
+**When** il est ouvert
+**Then** il se lit dans les lecteurs standards (VLC, QuickTime, lecteur natif OS) (FR-12)
+
+### Story 4.4: Nouvelle Génération & clôture du cycle de vie
+
+As a utilisateur,
+I want relancer une nouvelle Génération quand j'ai fini,
+So that j'enchaîne une deuxième photo sans confusion ni perte accidentelle.
+
+**Acceptance Criteria:**
+
+**Given** l'étape Vidéo
+**When** l'utilisateur regarde sous le lecteur
+**Then** trois actions apparaissent dans l'ordre canonique « Nouvelle Génération » (ghost) → « Revoir » (outline) → « Télécharger le MP4 » (or) (UX-DR10, UX-DR16)
+
+**Given** une Révélation non téléchargée
+**When** l'utilisateur clique « Nouvelle Génération »
+**Then** une confirmation est demandée avant de repartir d'une Zone d'upload vierge (UX-DR16)
+
+**Given** une Génération en cours
+**When** l'utilisateur rafraîchit ou ferme l'onglet
+**Then** `beforeunload` avertit « Votre Génération en cours sera perdue. » et, après rechargement, retour à l'Accueil sans reprise en v1 (UX-DR15)
+
+**Given** le Parcours complet à 4 étapes désormais présent
+**When** l'utilisateur revient en arrière via le stepper (ex. de Vidéo vers Masque)
+**Then** les artefacts amont sont conservés et le retour reste limité à la Génération en cours, validant FR-15 de bout en bout (FR-15, Flow 4)
+
+### Story 4.5: Coût unitaire documenté & déploiement de l'instance démo
+
+As a responsable de la démo,
+I want connaître le coût par Génération et disposer d'une instance démo déployable,
+So that je puisse présenter RoomReveal en séance et justifier son économie.
+
+**Acceptance Criteria:**
+
+**Given** le pipeline complet fonctionnel
+**When** une Génération de bout en bout est exécutée
+**Then** le coût unitaire par Génération est mesuré et documenté dans le `README.md` (cible 0,30–1,25 $ ; COGS estimé ≈ 0,62 $, +0,05 $ par régénération d'Inpainting) (NFR-2, SM-5, AR-README-COGS)
+**And** le temps de bout en bout sur photo standard est mesuré et documenté comme < 4 minutes (NFR-1, SM-4)
+
+**Given** le même artefact applicatif
+**When** on déploie
+**Then** deux environnements existent — `dev` local (`next dev`) et instance démo auto-hébergée (`next start` ou Docker) **sur réseau privé** — ne différant que par la variable `FAL_KEY` (AR-DEPLOY, AR-PROXY)
+**And** aucune CI en v1 : lint, typecheck et tests Vitest sont passés localement avant push (AR-DEPLOY, AR-TESTS)

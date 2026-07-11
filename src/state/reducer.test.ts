@@ -8,7 +8,7 @@ function fullGeneration(): Generation {
     step: "video",
     epoch: 2,
     originalPhoto: { blob: new Blob(["x"]), falUrl: "fal://photo" },
-    maskDraft: { canonical: true },
+    maskDraft: { detectedMaskUrl: "fal://mask" },
     mask: "fal://mask",
     emptyRoom: "fal://empty",
     reveal: "fal://reveal",
@@ -51,6 +51,57 @@ describe("generationReducer (pure, no mocks)", () => {
     };
     const next = generationReducer(state, { type: "GO_TO_STEP", step: "mask" });
     expect(next.waitPhase).toBeUndefined();
+  });
+
+  it("PHOTO_UPLOADED memoizes the fal URL on the existing photo", () => {
+    const state: Generation = {
+      step: "mask",
+      epoch: 1,
+      originalPhoto: { blob: new Blob(["p"]) },
+    };
+    const next = generationReducer(state, {
+      type: "PHOTO_UPLOADED",
+      falUrl: "fal://photo",
+    });
+    expect(next.originalPhoto?.falUrl).toBe("fal://photo");
+    expect(next.originalPhoto?.blob).toBe(state.originalPhoto?.blob);
+  });
+
+  it("DETECT_SUCCEEDED seeds maskDraft and clears the wait phase", () => {
+    const state: Generation = {
+      step: "mask",
+      epoch: 1,
+      originalPhoto: { blob: new Blob(["p"]) },
+      waitPhase: "generating",
+    };
+    const next = generationReducer(state, {
+      type: "DETECT_SUCCEEDED",
+      detectedMaskUrl: "fal://mask",
+    });
+    expect(next.maskDraft).toEqual({ detectedMaskUrl: "fal://mask" });
+    expect(next.waitPhase).toBeUndefined();
+  });
+
+  it("DETECT_SUCCEEDED with null marks detection ran without a mask (FR-16)", () => {
+    const state: Generation = {
+      step: "mask",
+      epoch: 1,
+      originalPhoto: { blob: new Blob(["p"]) },
+      waitPhase: "generating",
+    };
+    const next = generationReducer(state, {
+      type: "DETECT_SUCCEEDED",
+      detectedMaskUrl: null,
+    });
+    expect(next.maskDraft).toEqual({ detectedMaskUrl: null });
+  });
+
+  it("CONFIRM_ADVANCE_FROM upload also invalidates the mask draft", () => {
+    const next = generationReducer(fullGeneration(), {
+      type: "CONFIRM_ADVANCE_FROM",
+      step: "upload",
+    });
+    expect(next.maskDraft).toBeUndefined();
   });
 
   it("GO_TO_STEP backwards preserves ALL artifacts (FR-15, AD-11)", () => {

@@ -2,6 +2,7 @@
 
 import { useGeneration } from "@/state/generation-context";
 import { UploadZone } from "@/components/upload-zone";
+import { MaskSurface } from "@/components/mask-surface";
 import { WaitPanel } from "@/components/wait-panel";
 import { ErrorBanner } from "@/components/error-banner";
 
@@ -56,6 +57,10 @@ function StepSurface() {
         <UploadZone />
       </>
     );
+  }
+
+  if (state.step === "mask") {
+    return <MaskSurface />;
   }
 
   return (
