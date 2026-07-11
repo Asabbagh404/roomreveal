@@ -1,6 +1,12 @@
 import { makeStepError } from "@/state/step-error";
-import { ARTIFACT_EXPIRES_IN_SECONDS, MODELS, TIMEOUTS_MS } from "./config";
+import {
+  ARTIFACT_EXPIRES_IN_SECONDS,
+  DETECT_MAX_MASKS,
+  MODELS,
+  TIMEOUTS_MS,
+} from "./config";
 import { fal } from "./client";
+import { composeMask } from "./compose-mask";
 import { SAM_DETECT_PROMPT } from "./prompts";
 import type { AdapterOptions, DetectResult } from "./types";
 
@@ -44,9 +50,14 @@ export async function detect(
     const run = fal.subscribe(MODELS.detect, {
       input: {
         image_url: photoUrl,
-        // Broad English concept — see SAM_DETECT_PROMPT calibration note.
+        // Single English concept — see SAM_DETECT_PROMPT calibration note.
         prompt: SAM_DETECT_PROMPT,
         return_multiple_masks: true,
+        max_masks: DETECT_MAX_MASKS,
+        // Return a clean mask, not the photo with the mask applied: the combined
+        // `image` preview is ~4x more complete this way (calibrated live). The
+        // full win is unioning the `masks` array — see composeDetectResult.
+        apply_mask: false,
         output_format: "png",
       },
       abortSignal: controller.signal,
@@ -70,7 +81,7 @@ export async function detect(
       data?: DetectRawOutput;
     };
 
-    return composeDetectResult(result.data ?? {});
+    return await composeDetectResult(result.data ?? {});
   } catch {
     // Never surface a native fal error (AD-8). Abort/failure ⇒ retryable.
     throw makeStepError("detect", true);
@@ -87,24 +98,22 @@ interface DetectRawOutput {
 }
 
 /**
- * Maps the raw model output to the app contract (AD-5). `initialMask` is the
- * model's combined binary mask preview (`image`), which is at the input's
- * canonical dimensions by construction (the input was the canonical photo).
- * `initialMask === null` is the canonical "no furniture" signal (FR-16).
- *
- * [ASSUMPTION — calibrate on a live call] When no combined preview is returned,
- * the per-segment masks would be unioned + thresholded on canvas here; for now
- * the first segment stands in. SAM 3 does not label masks by category, so
- * `categories` stays empty (it is internal-only and never shown in the UI).
+ * Maps the raw model output to the app contract (AD-5). Prefers the UNION of the
+ * per-segment `masks` (composed + uploaded via composeMask) — calibrated live to
+ * cover ~2x more of the scene than the model's combined `image` preview. Falls
+ * back to the `image` preview when no segments are returned, then to null.
+ * `initialMask === null` is the canonical "no furniture" signal (FR-16). SAM 3
+ * does not label masks by category, so `categories` stays empty (internal-only).
  */
-function composeDetectResult(data: DetectRawOutput): DetectResult {
-  const combined = urlOrNull(data.image?.url);
-  if (combined !== null) return { initialMask: combined, categories: [] };
-
-  const masks = data.masks ?? [];
-  for (const m of masks) {
-    const url = urlOrNull(m.url);
-    if (url !== null) return { initialMask: url, categories: [] };
+async function composeDetectResult(
+  data: DetectRawOutput,
+): Promise<DetectResult> {
+  const maskUrls = (data.masks ?? [])
+    .map((m) => urlOrNull(m.url))
+    .filter((u): u is string => u !== null);
+  if (maskUrls.length > 0) {
+    return { initialMask: await composeMask(maskUrls), categories: [] };
   }
-  return { initialMask: null, categories: [] };
+  // No per-segment masks — fall back to the combined preview, else no furniture.
+  return { initialMask: urlOrNull(data.image?.url), categories: [] };
 }

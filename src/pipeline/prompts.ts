@@ -4,35 +4,53 @@
  */
 
 /**
- * The text prompt fed to SAM 3 for furniture segmentation.
+ * The single text concept fed to SAM 3 for furniture segmentation.
  *
- * [Calibrated live 2026-07-11] SAM 3 is English-only and returns a combined
- * mask for the broad concept "furniture"; the French per-category list (below)
- * and dot/comma-separated multi-concept prompts returned zero segments on real
- * room photos. Since the mask is fully user-editable afterwards (FR-6/FR-7), a
- * broad furniture mask is the right starting point. Per-category enrichment
- * (multiple calls unioned) is a possible future refinement.
+ * [Calibrated live 2026-07-11 on kitchen photos] SAM 3 accepts ONE English
+ * concept per call (its `prompt` is a single string; `return_multiple_masks`
+ * only returns multiple *instances* of that one concept). Empirically:
+ *   - comma- or period-separated multi-concept prompts return ZERO masks
+ *     (e.g. "cabinet, countertop, oven" → 0) — SAM 3 does not parse lists.
+ *   - "furniture" → ~21% coverage (2 instances); "kitchen" → ~3%.
+ *   - "kitchen furniture" / "kitchen cabinet" / "cabinet" → ~36–37%
+ *     (12–20 instances) — the strong kitchen concepts.
+ *   - Per-concept appliances (refrigerator/oven/hood/dishwasher/stool/table)
+ *     mostly returned 0 on a modern kitchen; a per-category union of 11
+ *     concepts reached only 39% vs 37% for "cabinet" alone — i.e. N× the fal
+ *     cost for ~+2%, so multi-call union is NOT worthwhile here.
+ * Kitchen-first for now (the app targets kitchens to start). The mask is fully
+ * user-editable afterwards (FR-6/FR-7), so a strong broad concept as the
+ * starting point is the right trade-off.
+ *
+ * [Future idea] To exploit the full FURNITURE_CATEGORIES list without paying fal
+ * per concept, run the per-category loop on a self-hosted / HuggingFace SAM and
+ * union the masks locally, then feed only the unioned mask into the pipeline.
  */
-export const SAM_DETECT_PROMPT = "furniture";
+export const SAM_DETECT_PROMPT = "kitchen furniture";
 
 /**
- * The furniture vocabulary from the glossary (§3), kept for reference and for a
- * future multi-concept detection strategy. Not currently sent as-is (see above).
+ * English kitchen-furniture vocabulary — the domain target for detection and
+ * the candidate concept pool. NOTE: this list is NOT joined into the prompt
+ * (SAM 3 ignores lists — see calibration above); it documents what we aim to
+ * cover and would seed a future per-room multi-call strategy if one ever proves
+ * worthwhile. `SAM_DETECT_PROMPT` above is the single concept actually sent.
+ * Ordered roughly by measured contribution on real kitchen photos.
  */
 export const FURNITURE_CATEGORIES: readonly string[] = [
-  "canapé",
-  "chaise",
-  "table",
-  "lit",
-  "lampe",
-  "étagère",
-  "meuble bas",
-  "tapis",
-  "plante",
-  "télévision",
-  "fauteuil",
-  "commode",
-  "bureau",
+  "cabinet",
+  "kitchen island",
+  "countertop",
+  "shelf",
+  "range hood",
+  "refrigerator",
+  "oven",
+  "stove",
+  "sink",
+  "dishwasher",
+  "microwave",
+  "stool",
+  "dining table",
+  "chair",
 ];
 
 /** Empty-room inpainting prompt — posed for Epic 3. */

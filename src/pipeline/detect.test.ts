@@ -8,16 +8,24 @@ vi.mock("./client", () => ({
   uploadArtifact: vi.fn(),
 }));
 
+// composeMask does the browser-only canvas union + upload; mocked at its
+// boundary so the adapter is unit-testable (the union itself is live-verified).
+const composeMask = vi.fn(async (urls: string[]) => `composed:${urls.length}`);
+vi.mock("./compose-mask", () => ({
+  composeMask: (urls: string[]) => composeMask(urls),
+}));
+
 import { detect } from "./detect";
 
 const opts = { signal: new AbortController().signal, onPhase: vi.fn() };
 
 afterEach(() => {
   subscribe.mockReset();
+  composeMask.mockClear();
 });
 
 describe("detect adapter (AD-5)", () => {
-  it("composes the combined mask URL on success", async () => {
+  it("unions the per-segment masks (preferred over the weaker combined preview)", async () => {
     subscribe.mockResolvedValue({
       data: {
         image: { url: "https://fal/mask.png" },
@@ -25,16 +33,30 @@ describe("detect adapter (AD-5)", () => {
       },
     });
     const result = await detect("https://fal/photo.jpg", opts);
-    expect(result.initialMask).toBe("https://fal/mask.png");
+    expect(composeMask).toHaveBeenCalledWith([
+      "https://fal/seg1.png",
+      "https://fal/seg2.png",
+    ]);
+    expect(result.initialMask).toBe("composed:2"); // union, not image preview
     expect(Array.isArray(result.categories)).toBe(true); // internal-only, never shown
   });
 
-  it("falls back to the first per-segment mask when there is no combined preview", async () => {
+  it("unions even a single segment (ignores the combined preview when masks exist)", async () => {
     subscribe.mockResolvedValue({
       data: { masks: [{ url: "https://fal/seg1.png" }] },
     });
     const result = await detect("https://fal/photo.jpg", opts);
-    expect(result.initialMask).toBe("https://fal/seg1.png");
+    expect(composeMask).toHaveBeenCalledWith(["https://fal/seg1.png"]);
+    expect(result.initialMask).toBe("composed:1");
+  });
+
+  it("falls back to the combined preview when no per-segment masks are returned", async () => {
+    subscribe.mockResolvedValue({
+      data: { image: { url: "https://fal/preview.png" }, masks: [] },
+    });
+    const result = await detect("https://fal/photo.jpg", opts);
+    expect(composeMask).not.toHaveBeenCalled();
+    expect(result.initialMask).toBe("https://fal/preview.png");
   });
 
   it("returns initialMask null when no segment is found (FR-16)", async () => {

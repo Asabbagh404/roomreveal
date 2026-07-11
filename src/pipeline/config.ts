@@ -23,6 +23,13 @@ export const TIMEOUTS_MS = {
 /** Retain every fal object (uploads + generations) for 24 h (AD-9 / AR-EPHEMERAL). */
 export const ARTIFACT_EXPIRES_IN_SECONDS = 86_400;
 
+/**
+ * Max instances SAM 3 returns for the detection concept (its default is 3).
+ * A kitchen shows ~12–20 cabinet/unit instances (calibrated live), so cap high
+ * to include them all in the combined mask; capping low would drop coverage.
+ */
+export const DETECT_MAX_MASKS = 20;
+
 /** The proxy route the client talks to (AD-4). */
 export const PROXY_URL = "/api/fal/proxy";
 
