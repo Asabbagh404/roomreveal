@@ -84,5 +84,15 @@ case).
 ## Tuning
 
 In `server.py`: `BOX_THRESHOLD` / `TEXT_THRESHOLD` (lower = more, looser
-detections). Swap `SAM_ID` to `facebook/sam-vit-large`/`-huge` or Grounding DINO
-to `-tiny` to trade quality for speed.
+detections). Calibrated live on a kitchen (AMD RX 9060 / gfx1200, ROCm 6.4):
+`0.30` → ~23 % coverage (misses upper cabinets), `0.20` → ~60 % (bleeds onto
+ceiling/walls), `0.25` = balanced default. Swap `SAM_ID` to
+`facebook/sam-vit-large`/`-huge` or Grounding DINO to `-tiny` to trade quality
+for speed.
+
+## Verified working
+
+AMD RX 9060 (`gfx1200`, ROCm 6.4 wheels, kernel 6.17, inbox driver) — end-to-end
+in the app: upload → local `/detect` → unioned binary mask in the editor. No host
+ROCm install or DKMS needed; the `torch==*+rocm6.4` wheel + `render` group access
+to `/dev/kfd` is sufficient.

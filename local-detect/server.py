@@ -33,7 +33,11 @@ from transformers import (
 # --- Config ---------------------------------------------------------------
 GDINO_ID = "IDEA-Research/grounding-dino-base"
 SAM_ID = "facebook/sam-vit-base"
-BOX_THRESHOLD = 0.3   # Grounding DINO detection confidence
+# Grounding DINO confidence. Calibrated live on a kitchen (RX 9060 / gfx1200):
+# 0.30 -> ~23% coverage (misses upper cabinets); 0.20 -> ~60% (bleeds onto
+# ceiling/walls); 0.25 is a balanced start. Lower = catch more. The mask is
+# user-editable afterwards, so err slightly generous.
+BOX_THRESHOLD = 0.25
 TEXT_THRESHOLD = 0.25
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -83,7 +87,7 @@ def _detect_boxes(m: dict, image: Image.Image, prompts: list[str]) -> torch.Tens
     results = m["gdino_processor"].post_process_grounded_object_detection(
         outputs,
         inputs.input_ids,
-        box_threshold=BOX_THRESHOLD,
+        threshold=BOX_THRESHOLD,  # renamed from box_threshold in transformers 5.x
         text_threshold=TEXT_THRESHOLD,
         target_sizes=[image.size[::-1]],  # (h, w)
     )
