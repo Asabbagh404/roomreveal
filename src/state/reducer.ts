@@ -35,10 +35,7 @@ function stepIndex(step: Step): number {
 }
 
 /** Clears every artifact strictly downstream of `step` (AD-11). */
-function invalidateDownstream(
-  _: Generation,
-  step: Step,
-): Partial<Generation> {
+function invalidateDownstream(step: Step): Partial<Generation> {
   const from = stepIndex(step);
   const cleared: Partial<Generation> = {};
   // maskDraft + mask belong to the "mask" step, emptyRoom to "emptyRoom",
@@ -73,7 +70,7 @@ export function generationReducer(
       // (AD-12). Only originalPhoto survives, at the mask step.
       return {
         ...state,
-        ...invalidateDownstream(state, "upload"),
+        ...invalidateDownstream("upload"),
         originalPhoto: action.photo,
         maskDraft: undefined,
         step: "mask",
@@ -108,7 +105,7 @@ export function generationReducer(
       return { ...state, step: action.step, error: undefined, waitPhase: undefined };
 
     case "CONFIRM_ADVANCE_FROM": {
-      const next = { ...state, ...invalidateDownstream(state, action.step) };
+      const next = { ...state, ...invalidateDownstream(action.step) };
       return {
         ...next,
         step: action.step,

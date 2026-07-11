@@ -11,10 +11,10 @@ describe("pipeline config registry (AR-CONFIG / AR-PROXY)", () => {
     expect(MODELS.detect).toBe("fal-ai/sam-3/image");
   });
 
-  it("keeps every model in the proxy allowlist (no un-listed endpoint reachable)", () => {
-    for (const id of Object.values(MODELS)) {
-      expect(FAL_ALLOWED_ENDPOINTS).toContain(id);
-    }
+  it("allows only the wired model (detect); inpaint/video stay closed until their epics", () => {
+    expect(FAL_ALLOWED_ENDPOINTS).toContain(MODELS.detect);
+    expect(FAL_ALLOWED_ENDPOINTS).not.toContain(MODELS.inpaint);
+    expect(FAL_ALLOWED_ENDPOINTS).not.toContain(MODELS.video);
   });
 
   it("retains fal objects for 24 h (AD-9)", () => {

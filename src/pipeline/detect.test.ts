@@ -57,6 +57,24 @@ describe("detect adapter (AD-5)", () => {
     expect(onPhase).toHaveBeenCalledWith("generating");
   });
 
+  it("maps a COMPLETED queue status to the finalizing phase", async () => {
+    const onPhase = vi.fn();
+    subscribe.mockImplementation(
+      (_id: string, cfg: { onQueueUpdate: (u: { status: string }) => void }) => {
+        cfg.onQueueUpdate({ status: "COMPLETED" });
+        return Promise.resolve({ data: { image: { url: "u" } } });
+      },
+    );
+    await detect("https://fal/photo.jpg", { ...opts, onPhase });
+    expect(onPhase).toHaveBeenCalledWith("finalizing");
+  });
+
+  it("treats an empty-string mask URL as no furniture (FR-16)", async () => {
+    subscribe.mockResolvedValue({ data: { image: { url: "" }, masks: [{ url: "" }] } });
+    const result = await detect("https://fal/photo.jpg", opts);
+    expect(result.initialMask).toBeNull();
+  });
+
   it("converts a rejection into a retryable detect StepError, never leaking the raw fal error", async () => {
     subscribe.mockRejectedValue(new Error("fal 500 boom"));
     const rejection = await detect("https://fal/photo.jpg", opts).catch(

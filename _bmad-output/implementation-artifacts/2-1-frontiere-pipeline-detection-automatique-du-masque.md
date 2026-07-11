@@ -4,7 +4,7 @@ baseline_commit: a806e01
 
 # Story 2.1: Frontière pipeline & détection automatique du Masque
 
-Status: in-progress
+Status: done
 
 ## Story
 
@@ -107,10 +107,60 @@ so that je pars d'un Masque déjà utile plutôt que d'une toile vierge.
 
 ### Agent Model Used
 
+claude-fable-5 (Claude Fable 5)
+
 ### Debug Log References
+
+- `@fal-ai/client` type `Sam3ImageInput` : champ `prompt` (string), pas `prompts` ; output `Sam3ImageOutput` = `{ image?: Image, masks: Image[] }` (pas de label). Adaptateur aligné sur ces types réels.
+- Boucle d'abandon découverte en revue : `waitPhase` dans les deps de l'effet Masque → le premier `SET_WAIT_PHASE` relançait l'effet et abandonnait le job. Corrigé.
 
 ### Completion Notes List
 
+- Proxy `/api/fal/proxy` via `createRouteHandler({ allowedEndpoints })` (API officielle) ; `FAL_KEY` serveur uniquement.
+- `pipeline/` : `config.ts` (modèles par rôle, timeouts, `ARTIFACT_EXPIRES_IN_SECONDS`, allowlist), `prompts.ts` (liste meubles), `client.ts` (SEUL importeur `@fal-ai/client`, `fal.config({proxyUrl})`, `uploadArtifact` lifecycle 24 h), `detect.ts` (adaptateur passif SAM 3), `types.ts`, `index.ts`.
+- `state/effects.ts` : `runDetect` (upload mémoïsé, phase `uploading`, garde `dead()=abort||stale` à tous les dispatch) ; `state/step-error.ts` (helper `makeStepError`/`isStepError` partagé). Reducer : `PHOTO_UPLOADED`, `DETECT_SUCCEEDED` (purs).
+- `MaskSurface` : lance la détection à l'entrée Masque (deps `[step, epoch, maskDraft, error, originalPhoto]`, hors `waitPhase`) ; overlay fuchsia 45 % + contour ; aucune catégorie affichée.
+- 71 tests verts (dont test d'architecture : `@fal-ai/client` seulement dans pipeline/). `tsc`, `lint`, `build` OK.
+- **Vérification fal live différée** (nécessite `FAL_KEY`) : détection réelle, mapping exact de la réponse SAM 3, CORS des masques (voir revue).
+
 ### File List
 
+- `src/app/api/fal/proxy/route.ts` (nouveau)
+- `src/pipeline/config.ts` `.test.ts`, `prompts.ts`, `client.ts`, `detect.ts` `.test.ts`, `types.ts`, `index.ts`, `import-boundary.test.ts` (nouveaux)
+- `src/state/effects.ts` `.test.ts`, `step-error.ts` (nouveaux)
+- `src/state/reducer.ts` `.test.ts`, `types.ts` (modifiés — actions + MaskDraft)
+- `src/components/mask-surface.tsx` (nouveau), `parcours-scene.tsx` (modifié)
+- `package.json` / lock (`@fal-ai/client`, `@fal-ai/server-proxy`)
+
 ## Change Log
+
+- 2026-07-11 : Story 2.1 implémentée — proxy fal, registre pipeline, adaptateur `detect`, couche `effects`, surface Masque. 66 tests. Statut → review.
+- 2026-07-11 : Revue adversariale (3 couches, AC4 PASS / AC1-3 PARTIAL). 12 correctifs, 71 tests verts, story → done.
+
+## Senior Developer Review (AI)
+
+**Date :** 2026-07-11 · **Résultat :** Approuvé après corrections · **Verdict ACs :** AC4 PASS ; AC1/AC2/AC3 PARTIAL (parts vérifiables livrées et corrigées ; parts fal-live différées documentées).
+
+### Action Items corrigés
+
+- [x] **[Haut]** Boucle d'abandon : `waitPhase` retiré des deps de l'effet Masque ; `error`/`maskDraft` ajoutés → plus d'auto-abandon, et la relance (`CLEAR_ERROR`) re-déclenche la détection (Edge + Blind + Auditor F6).
+- [x] **[Haut]** Job abandonné produisait un `SET_ERROR`/`DETECT_SUCCEEDED` parasite → garde `dead() = signal.aborted || isStale()` à tous les points de dispatch de `runDetect` (Edge + Blind).
+- [x] **[Haut]** Le timeout n'abandonnait pas le job fal (race + polling orphelin) → `detect` crée un `AbortController` interne chaîné au signal externe, abandonné au timeout ; rejection tardive de `run` avalée (Blind).
+- [x] **[Haut]** AD-9 (24 h) absent sur la génération → header `x-fal-object-lifecycle-preference` posé sur `fal.subscribe` (comme `uploadArtifact` sur l'upload) ; commentaire du proxy corrigé (F1 Auditor + Blind).
+- [x] **[Moyen]** Allowlist ouvrait inpaint+video prématurément → réduite à `detect` seul (inpaint/video ajoutés à leurs epics) (Blind).
+- [x] **[Moyen]** `StepError`/`isStepError` dupliqués et divergents → `src/state/step-error.ts` partagé (Blind).
+- [x] **[Moyen]** Phase `uploading` jamais émise (dead-air pendant l'upload) → `SET_WAIT_PHASE: uploading` avant l'upload (Blind, FR-14).
+- [x] **[Moyen]** `COMPLETED` non mappé → `finalizing` ; statuts queue gérés (Blind).
+- [x] **[Moyen]** URL de masque vide (`""`) traitée comme valide → normalisée en `null` (cas FR-16) sur les deux branches (Edge + Blind).
+- [x] **[Moyen]** Invariant `@fal-ai/client` seulement dans pipeline/ non testé → test d'architecture ajouté (`import-boundary.test.ts`) (Blind).
+- [x] **[Bas]** `url()` CSS non échappé → guillemets (Blind) ; param mort `_` de `invalidateDownstream` retiré (Blind) ; tests staleness (mid-flight + abort) et `uploading` renforcés (Blind/Edge).
+
+### Écartés / Différés (documentés)
+
+- **Composition multi-segments (union/seuil) — F3** : `detect` retourne le masque combiné du modèle (`image`, « Primary segmented mask preview »), aux dimensions canoniques par construction (l'entrée était la photo canonique). L'union explicite des N segments sur canvas est une **calibration au build** (opère sur des masques fal réels non disponibles ici) — taguée `[ASSUMPTION]` dans l'adaptateur.
+- **Injection lifecycle côté proxy (belt-and-suspenders)** : posée aux call-sites (upload + subscribe) via l'API fal idiomatique ; le proxy forwarde les headers `x-fal-*`. L'injection proxy-side (wrapping du handler + reconstruction de la requête) est différée — le call-site couvre chaque requête.
+- **403 vs 400 (F2)** : la lib fal rejette une cible hors allowlist en **400** ; l'intention de sécurité (rejet + allowlist bornée) est respectée. Un garde maison pour forcer 403 n'apporte rien.
+- **`categories` toujours `[]`** : SAM 3 ne labellise pas les masques ; le champ fait partie du contrat canonique de `detect` (AR-PIPELINE) et n'est jamais lu en UI. Conservé.
+- **CORS des masques en CSS `mask-image`** : risque réel à vérifier en live (masque cross-origin fal) ; l'éditeur canvas de la Story 2.2 remplace cet affichage transitoire. À valider avec `FAL_KEY`.
+- **Pas d'auth/rate-limit sur le proxy** : par conception v1 (PRD §6 « pas d'authentification » ; AD-4 réseau privé + allowlist).
+- **Double upload sous StrictMode dev** : coût dev-only négligeable ; en prod l'effet ne s'exécute qu'une fois par époque.

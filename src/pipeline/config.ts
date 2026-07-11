@@ -28,15 +28,15 @@ export const PROXY_URL = "/api/fal/proxy";
 
 /**
  * Endpoints the proxy allows (AR-PROXY). Passed to the fal server-proxy as its
- * `allowedEndpoints` allowlist — any POST to a model outside this set is refused.
- * Glob syntax (picomatch). Storage/queue endpoints are covered by the proxy's
- * default allowed URL patterns.
+ * `allowedEndpoints` allowlist — any POST to a model outside this set is refused
+ * by the proxy. Glob syntax (picomatch). Storage/queue endpoints are covered by
+ * the proxy's default allowed URL patterns (a separate, URL-pattern gate).
+ *
+ * Only the models actually wired in the current epic are listed, to keep the
+ * public proxy's reachable model surface minimal — `inpaint` (Epic 3) and
+ * `video` (Epic 4) are added to this allowlist when their adapters ship.
  */
 export const FAL_ALLOWED_ENDPOINTS: readonly string[] = [
   `${MODELS.detect}/**`,
   `${MODELS.detect}`,
-  `${MODELS.inpaint}/**`,
-  `${MODELS.inpaint}`,
-  `${MODELS.video}/**`,
-  `${MODELS.video}`,
 ];

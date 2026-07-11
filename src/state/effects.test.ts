@@ -60,21 +60,54 @@ describe("runDetect (AD-12 orchestration)", () => {
     expect(detect).toHaveBeenCalledWith("https://fal/photo.jpg", expect.anything());
   });
 
-  it("drops a stale result without dispatching DETECT_SUCCEEDED (superseded epoch)", async () => {
+  it("drops a result that goes stale mid-flight (epoch bumped after detect starts)", async () => {
     uploadArtifact.mockResolvedValue("https://fal/photo.jpg");
-    detect.mockResolvedValue({ initialMask: "https://fal/mask.png", categories: [] });
+    // Flip stale only once detect is actually running — proves the post-detect
+    // guard (not merely an early abort) drops the superseded result.
+    let stale = false;
+    detect.mockImplementation(() => {
+      stale = true;
+      return Promise.resolve({ initialMask: "https://fal/mask.png", categories: [] });
+    });
     const dispatch = vi.fn();
 
-    // Becomes stale after the async work resolves.
-    let stale = false;
-    const isStale = () => stale;
-    const promise = runDetect(baseState(), dispatch, { signal, isStale });
-    stale = true;
-    await promise;
+    await runDetect(baseState(), dispatch, { signal, isStale: () => stale });
 
     expect(
       dispatch.mock.calls.some((c) => c[0].type === "DETECT_SUCCEEDED"),
     ).toBe(false);
+  });
+
+  it("does not dispatch when the signal is aborted, even if the epoch is unchanged", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/photo.jpg");
+    detect.mockResolvedValue({ initialMask: "https://fal/mask.png", categories: [] });
+    const dispatch = vi.fn();
+    const aborted = new AbortController();
+    aborted.abort();
+
+    await runDetect(baseState(), dispatch, {
+      signal: aborted.signal,
+      isStale: () => false,
+    });
+
+    expect(
+      dispatch.mock.calls.some(
+        (c) => c[0].type === "DETECT_SUCCEEDED" || c[0].type === "SET_ERROR",
+      ),
+    ).toBe(false);
+  });
+
+  it("emits the uploading phase before uploading the photo (FR-14)", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/photo.jpg");
+    detect.mockResolvedValue({ initialMask: null, categories: [] });
+    const dispatch = vi.fn();
+
+    await runDetect(baseState(), dispatch, { signal, isStale: notStale });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "SET_WAIT_PHASE",
+      phase: "uploading",
+    });
   });
 
   it("dispatches SET_ERROR with the adapter's StepError on failure", async () => {
