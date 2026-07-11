@@ -12,6 +12,8 @@ function fullGeneration(): Generation {
       falUrl: "fal://photo",
       detectionBlob: new Blob(["d"]),
       detectionFalUrl: "fal://detect",
+      width: 1024,
+      height: 768,
     },
     maskDraft: { detectedMaskUrl: "fal://mask" },
     mask: "fal://mask",
@@ -26,7 +28,7 @@ describe("generationReducer (pure, no mocks)", () => {
   });
 
   it("PHOTO_NORMALIZED sets originalPhoto and advances to mask", () => {
-    const photo = { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]) };
+    const photo = { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]), width: 1024, height: 768 };
     const next = generationReducer(initialGeneration, {
       type: "PHOTO_NORMALIZED",
       photo,
@@ -37,7 +39,7 @@ describe("generationReducer (pure, no mocks)", () => {
 
   it("PHOTO_NORMALIZED on a re-upload drops stale downstream artifacts and bumps epoch (AD-11/AD-12)", () => {
     const state = fullGeneration();
-    const photo = { blob: new Blob(["new"]), detectionBlob: new Blob(["d"]) };
+    const photo = { blob: new Blob(["new"]), detectionBlob: new Blob(["d"]), width: 1024, height: 768 };
     const next = generationReducer(state, { type: "PHOTO_NORMALIZED", photo });
     expect(next.originalPhoto).toBe(photo);
     expect(next.step).toBe("mask");
@@ -62,7 +64,7 @@ describe("generationReducer (pure, no mocks)", () => {
     const state: Generation = {
       step: "mask",
       epoch: 1,
-      originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]) },
+      originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]), width: 1024, height: 768 },
     };
     const next = generationReducer(state, {
       type: "PHOTO_UPLOADED",
@@ -76,7 +78,7 @@ describe("generationReducer (pure, no mocks)", () => {
     const state: Generation = {
       step: "mask",
       epoch: 1,
-      originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]) },
+      originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]), width: 1024, height: 768 },
     };
     const next = generationReducer(state, {
       type: "DETECTION_UPLOADED",
@@ -90,7 +92,7 @@ describe("generationReducer (pure, no mocks)", () => {
     const state: Generation = {
       step: "mask",
       epoch: 1,
-      originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]) },
+      originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]), width: 1024, height: 768 },
       waitPhase: "generating",
     };
     const next = generationReducer(state, {
@@ -105,7 +107,7 @@ describe("generationReducer (pure, no mocks)", () => {
     const state: Generation = {
       step: "mask",
       epoch: 1,
-      originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]) },
+      originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]), width: 1024, height: 768 },
       waitPhase: "generating",
     };
     const next = generationReducer(state, {
@@ -113,6 +115,27 @@ describe("generationReducer (pure, no mocks)", () => {
       detectedMaskUrl: null,
     });
     expect(next.maskDraft).toEqual({ detectedMaskUrl: null });
+  });
+
+  it("SET_MASK_BUFFER commits an editable buffer onto the existing draft (AD-13)", () => {
+    const state: Generation = {
+      step: "mask",
+      epoch: 1,
+      maskDraft: { detectedMaskUrl: "fal://mask" },
+    };
+    const buffer = { data: new Uint8Array(4), width: 2, height: 2 };
+    const next = generationReducer(state, { type: "SET_MASK_BUFFER", buffer });
+    expect(next.maskDraft?.buffer).toBe(buffer);
+    expect(next.maskDraft?.detectedMaskUrl).toBe("fal://mask"); // preserved
+    expect(next.maskDraft).not.toBe(state.maskDraft); // new object (immutable)
+  });
+
+  it("SET_MASK_BUFFER is a no-op before a draft exists (detection must run first)", () => {
+    const state: Generation = { step: "mask", epoch: 1 };
+    const buffer = { data: new Uint8Array(4), width: 2, height: 2 };
+    expect(generationReducer(state, { type: "SET_MASK_BUFFER", buffer })).toBe(
+      state,
+    );
   });
 
   it("CONFIRM_ADVANCE_FROM upload also invalidates the mask draft", () => {

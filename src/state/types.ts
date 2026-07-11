@@ -62,17 +62,31 @@ export interface OriginalPhoto {
   falUrl?: string;
   detectionBlob: Blob;
   detectionFalUrl?: string;
+  /** Canonical pixel dimensions of `blob` — the mask buffer matches these 1:1
+   * (AD-2, AD-7). Fixed at upload; never re-decoded downstream. */
+  width: number;
+  height: number;
 }
 
 /**
+ * The editable binary mask buffer (AD-7). Defined in the lib leaf (pure pixel
+ * primitive) and re-exported here so the domain has a single name for it while
+ * lib/ stays free of any state/ import (AR-LAYERS).
+ */
+export type { MaskBuffer } from "@/lib/mask-buffer";
+import type { MaskBuffer } from "@/lib/mask-buffer";
+
+/**
  * The mask draft (AD-13), owned by the reducer so it survives component
- * unmount/remount. Story 2.1 seeds it from detection; Story 2.2 extends it with
- * the editable binary buffer. `detectedMaskUrl === null` means detection found
- * no furniture (FR-16). Its presence also marks "detection has run" for this
- * attempt, so the effect layer does not re-run detect on every render.
+ * unmount/remount. Story 2.1 seeds `detectedMaskUrl` from detection; Story 2.2
+ * adds the editable binary `buffer` (canonical dims, dual-life AD-13).
+ * `detectedMaskUrl === null` means detection found no furniture (FR-16). The
+ * draft's presence marks "detection has run" for this attempt, so the effect
+ * layer does not re-run detect on every render.
  */
 export interface MaskDraft {
   detectedMaskUrl: string | null;
+  buffer?: MaskBuffer;
 }
 
 /**

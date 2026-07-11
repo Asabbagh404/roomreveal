@@ -1,5 +1,6 @@
 import {
   type Generation,
+  type MaskBuffer,
   type OriginalPhoto,
   type Step,
   type StepError,
@@ -25,6 +26,7 @@ export type GenerationAction =
   | { type: "PHOTO_UPLOADED"; falUrl: string }
   | { type: "DETECTION_UPLOADED"; falUrl: string }
   | { type: "DETECT_SUCCEEDED"; detectedMaskUrl: string | null }
+  | { type: "SET_MASK_BUFFER"; buffer: MaskBuffer }
   | { type: "GO_TO_STEP"; step: Step }
   | { type: "CONFIRM_ADVANCE_FROM"; step: Step }
   | { type: "SET_WAIT_PHASE"; phase: WaitPhase }
@@ -102,11 +104,27 @@ export function generationReducer(
     case "DETECT_SUCCEEDED":
       // Seed the mask draft from detection; its presence marks "detection ran".
       // A null detectedMaskUrl is the no-furniture case (FR-16), not an error.
+      // Preserve any buffer already committed this attempt so a stray re-dispatch
+      // (that slipped past the effect-layer epoch guard) can't wipe manual edits.
       return {
         ...state,
-        maskDraft: { detectedMaskUrl: action.detectedMaskUrl },
+        maskDraft: {
+          detectedMaskUrl: action.detectedMaskUrl,
+          buffer: state.maskDraft?.buffer,
+        },
         waitPhase: undefined,
         error: undefined,
+      };
+
+    case "SET_MASK_BUFFER":
+      // Commit an editable mask buffer (seed, stroke, or undo/redo). Replaces
+      // maskDraft immutably (new object) so referential-equality checks fire and
+      // no already-referenced Uint8Array is mutated in place (AD-13). Ignored if
+      // no draft exists yet (detection must have produced one first).
+      if (state.maskDraft === undefined) return state;
+      return {
+        ...state,
+        maskDraft: { ...state.maskDraft, buffer: action.buffer },
       };
 
     case "GO_TO_STEP":

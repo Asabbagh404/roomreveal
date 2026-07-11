@@ -47,7 +47,7 @@ export function computeCanonicalDimensions(
 function encodeAtLongSide(
   bitmap: ImageBitmap,
   maxLongSide: number,
-): Promise<Blob> {
+): Promise<EncodedImage> {
   const { width, height } = computeCanonicalDimensions(
     bitmap.width,
     bitmap.height,
@@ -55,18 +55,28 @@ function encodeAtLongSide(
   );
   const canvas = document.createElement("canvas");
   // Guard against a zero dimension from an extreme aspect ratio (round-to-0).
-  canvas.width = Math.max(1, width);
-  canvas.height = Math.max(1, height);
+  const w = Math.max(1, width);
+  const h = Math.max(1, height);
+  canvas.width = w;
+  canvas.height = h;
   const ctx = canvas.getContext("2d");
   if (ctx === null) throw new Error("2D canvas context unavailable");
-  ctx.drawImage(bitmap, 0, 0, width, height);
-  return new Promise<Blob>((resolve, reject) => {
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  return new Promise<EncodedImage>((resolve, reject) => {
     canvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new Error("Canvas encoding failed"))),
+      (b) =>
+        b
+          ? resolve({ blob: b, width: w, height: h })
+          : reject(new Error("Canvas encoding failed")),
       "image/jpeg",
       JPEG_QUALITY,
     );
   });
+}
+
+/** A JPEG Blob together with its actual encoded pixel dimensions. */
+interface EncodedImage extends Dimensions {
+  blob: Blob;
 }
 
 /** The two JPEG variants produced from a single decode at upload. */
@@ -75,6 +85,10 @@ export interface NormalizedUpload {
   canonical: Blob;
   /** Higher-res copy (<= DETECTION_MAX_LONG_SIDE) — detection input only. */
   detection: Blob;
+  /** Actual canonical pixel dimensions — the mask buffer must match these 1:1
+   * (AD-7). Source of truth fixed at upload so nothing re-decodes downstream. */
+  width: number;
+  height: number;
 }
 
 /**
@@ -88,7 +102,12 @@ export async function normalizeUpload(file: File): Promise<NormalizedUpload> {
   try {
     const canonical = await encodeAtLongSide(bitmap, MAX_LONG_SIDE);
     const detection = await encodeAtLongSide(bitmap, DETECTION_MAX_LONG_SIDE);
-    return { canonical, detection };
+    return {
+      canonical: canonical.blob,
+      detection: detection.blob,
+      width: canonical.width,
+      height: canonical.height,
+    };
   } finally {
     bitmap.close();
   }

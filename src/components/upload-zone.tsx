@@ -34,10 +34,11 @@ export function UploadZone() {
     try {
       // Single decode → canonical (pipeline) + detection (higher-res) JPEGs
       // (AD-2 + amendment); the original File is dropped here.
-      const { canonical, detection } = await normalizeUpload(file);
+      const { canonical, detection, width, height } =
+        await normalizeUpload(file);
       dispatch({
         type: "PHOTO_NORMALIZED",
-        photo: { blob: canonical, detectionBlob: detection },
+        photo: { blob: canonical, detectionBlob: detection, width, height },
       });
     } catch {
       setError(UPLOAD_MESSAGES.unusable);

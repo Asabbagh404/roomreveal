@@ -14,6 +14,8 @@ vi.mock("@/lib/resize", async (importOriginal) => {
     normalizeUpload: vi.fn(async () => ({
       canonical: new Blob(["jpeg"], { type: "image/jpeg" }),
       detection: new Blob(["jpeg-hires"], { type: "image/jpeg" }),
+      width: 1024,
+      height: 768,
     })),
   };
 });

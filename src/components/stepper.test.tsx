@@ -36,7 +36,7 @@ describe("Stepper re-advance confirmation (AC3)", () => {
   const wentBack: Generation = {
     step: "mask",
     epoch: 1,
-    originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]) },
+    originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]), width: 1024, height: 768 },
     mask: "fal://mask",
     emptyRoom: "fal://empty",
     reveal: "fal://reveal",

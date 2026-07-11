@@ -15,7 +15,7 @@ function baseState(overrides: Partial<Generation> = {}): Generation {
   return {
     step: "mask",
     epoch: 1,
-    originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]) },
+    originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]), width: 1024, height: 768 },
     ...overrides,
   };
 }
@@ -55,6 +55,8 @@ describe("runDetect (AD-12 orchestration)", () => {
         blob: new Blob(["p"]),
         detectionBlob: new Blob(["d"]),
         detectionFalUrl: "https://fal/detect.jpg",
+        width: 1024,
+        height: 768,
       },
     });
 
