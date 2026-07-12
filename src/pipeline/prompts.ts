@@ -26,25 +26,48 @@
 export const SAM_DETECT_PROMPT = "kitchen furniture";
 
 /**
- * English kitchen-furniture vocabulary — the domain target for detection and
- * the candidate concept pool. NOTE: this list is NOT joined into the prompt
- * (SAM 3 ignores lists — see calibration above); it documents what we aim to
- * cover and would seed a future per-room multi-call strategy if one ever proves
- * worthwhile. `SAM_DETECT_PROMPT` above is the single concept actually sent.
- * Ordered roughly by measured contribution on real kitchen photos.
+ * English kitchen vocabulary for detection. Backend-dependent usage:
+ * - LOCAL backend (Grounded-SAM, DETECT_BACKEND=local): the WHOLE list is sent
+ *   to the service (detect-local.ts) — Grounding DINO detects every concept in
+ *   one period-separated prompt and unions the masks. So EACH entry here
+ *   directly widens what the local mask covers.
+ * - fal backend (SAM 3): SAM 3 ignores multi-concept lists (see calibration
+ *   above), so only `SAM_DETECT_PROMPT` is sent; for fal this list is
+ *   documentary / a future per-concept-loop pool.
+ * Synonyms are included on purpose: Grounding DINO's recall is phrasing-
+ * sensitive, so several near-synonyms of the same object lift coverage. The
+ * mask is fully user-editable afterwards, so err generous.
  */
 export const FURNITURE_CATEGORIES: readonly string[] = [
+  // Large units & structure
   "cabinet",
   "kitchen island",
   "countertop",
+  "worktop",
+  "kitchen counter",
   "shelf",
   "range hood",
+  "extractor hood",
+  "cooker hood",
+  // Large appliances
   "refrigerator",
   "oven",
   "stove",
   "sink",
   "dishwasher",
   "microwave",
+  // Small appliances & worktop tools (counter clutter)
+  "blender",
+  "stand mixer",
+  "kettle",
+  "toaster",
+  "coffee machine",
+  "kitchen utensils",
+  "cutting board",
+  "pot",
+  "pan",
+  "dish rack",
+  // Seating & tables
   "stool",
   "dining table",
   "chair",

@@ -1,0 +1,27 @@
+- generic [active] [ref=f28e1]:
+  - generic [ref=f28e2]:
+    - banner [ref=f28e3]:
+      - navigation "Parcours" [ref=f28e5]:
+        - list [ref=f28e6]:
+          - listitem [ref=f28e7]:
+            - button "Upload" [ref=f28e50] [cursor=pointer]
+          - listitem [ref=f28e12]:
+            - button "Masque" [ref=f28e88] [cursor=pointer]
+          - listitem [ref=f28e17]:
+            - button "3 Pièce vide" [ref=f28e18]:
+              - generic [ref=f28e19]: "3"
+              - generic [ref=f28e20]: Pièce vide
+          - listitem [ref=f28e22]:
+            - button "4 Vidéo" [disabled] [ref=f28e23]:
+              - generic [ref=f28e24]: "4"
+              - generic [ref=f28e25]: Vidéo
+        - paragraph [ref=f28e26]: "Étape 3 sur 4 : Pièce vide"
+    - main [ref=f28e27]:
+      - generic [ref=f28e95]:
+        - paragraph [ref=f28e96]: Envoi de vos images
+        - progressbar [ref=f28e97]
+        - paragraph [ref=f28e99]: 0 s
+    - contentinfo [ref=f28e39]:
+      - paragraph [ref=f28e40]: Vos photos sont supprimées automatiquement après 24 heures.
+  - button "Open Next.js Dev Tools" [ref=f28e46] [cursor=pointer]
+  - alert [ref=f28e86]
