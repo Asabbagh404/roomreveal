@@ -1,0 +1,43 @@
+- generic:
+  - generic:
+    - banner:
+      - generic:
+        - navigation "Parcours":
+          - list:
+            - listitem:
+              - button:
+                - generic: Upload
+            - listitem:
+              - button:
+                - generic: Masque
+            - listitem:
+              - button:
+                - generic: "3"
+                - generic: Pièce vide
+            - listitem:
+              - button [disabled]:
+                - generic: "4"
+                - generic: Vidéo
+          - paragraph: "Étape 3 sur 4 : Pièce vide"
+    - main:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - button [expanded]:
+                - figure:
+                  - generic: Photo originale
+              - button:
+                - figure:
+                  - generic: Pièce vide
+            - button:
+              - generic: Créer ma vidéo
+              - generic: 1 à 3 minutes de génération
+    - contentinfo:
+      - paragraph: Vos photos sont supprimées automatiquement après 24 heures.
+  - button "Open Next.js Dev Tools" [ref=e46] [cursor=pointer]
+  - alert
+  - dialog [ref=e100]:
+    - heading "Photo originale" [level=2] [ref=e101]
+    - img "Photo originale" [ref=e102]
+    - button "Close" [active] [ref=e103]

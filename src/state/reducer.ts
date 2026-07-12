@@ -30,6 +30,9 @@ export type GenerationAction =
   | { type: "MASK_VALIDATED"; maskUrl: string }
   | { type: "INPAINT_SUCCEEDED"; emptyRoomUrl: string }
   | { type: "GO_TO_STEP"; step: Step }
+  // `step` is the DESTINATION to advance to (not the source): sets step=step and
+  // invalidates everything strictly downstream of it. Named "…_FROM" for the
+  // stepper's "re-advance from an earlier point" flow; callers pass the target.
   | { type: "CONFIRM_ADVANCE_FROM"; step: Step }
   | { type: "SET_WAIT_PHASE"; phase: WaitPhase }
   | { type: "SET_ERROR"; error: StepError }

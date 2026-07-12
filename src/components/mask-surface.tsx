@@ -27,6 +27,7 @@ import {
 } from "@/lib/mask-history";
 import { clampZoom, screenToBuffer, stepBrush } from "@/lib/mask-tools";
 import { MaskToolbar } from "@/components/mask-toolbar";
+import { usePhotoObjectUrl } from "@/components/use-photo-object-url";
 
 // Concrete RGB of --color-masque-overlay (#ff2e9e). Canvas pixels can't read a
 // CSS variable, so the token value is mirrored here (kept in sync with globals).
@@ -565,23 +566,3 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
-/** Turns the canonical photo Blob into a display object URL (revoked on change). */
-function usePhotoObjectUrl(blob: Blob | undefined): string | null {
-  const [url, setUrl] = useState<string | null>(null);
-  // Create and revoke in the SAME effect. `createObjectURL` is a side effect, so
-  // it must not live in `useMemo`: under StrictMode the mount/cleanup/remount
-  // cycle would revoke a memoized URL that the memo never recomputes, leaving a
-  // dangling blob: reference (net::ERR_FILE_NOT_FOUND). Pairing create+revoke
-  // per effect run means a remount always yields a fresh, live URL.
-  useEffect(() => {
-    if (!blob) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing to browser blob-URL store (see above)
-      setUrl(null);
-      return;
-    }
-    const objectUrl = URL.createObjectURL(blob);
-    setUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [blob]);
-  return url;
-}

@@ -1,0 +1,32 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - navigation "Parcours" [ref=e5]:
+        - list [ref=e6]:
+          - listitem [ref=e7]:
+            - button "Upload" [ref=e50] [cursor=pointer]
+          - listitem [ref=e12]:
+            - button "Masque" [ref=e83] [cursor=pointer]
+          - listitem [ref=e17]:
+            - button "3 Pièce vide" [active] [ref=e109]:
+              - generic [ref=e19]: "3"
+              - generic [ref=e20]: Pièce vide
+          - listitem [ref=e22]:
+            - button "4 Vidéo" [disabled] [ref=e23]:
+              - generic [ref=e24]: "4"
+              - generic [ref=e25]: Vidéo
+        - paragraph [ref=e26]: "Étape 3 sur 4 : Pièce vide"
+    - main [ref=e27]:
+      - generic [ref=e110]:
+        - generic [ref=e111]:
+          - button [ref=e112] [cursor=pointer]:
+            - figure "Photo originale" [ref=e113]
+          - button [ref=e116] [cursor=pointer]:
+            - figure "Pièce vide" [ref=e117]
+        - button "Créer ma vidéo 1 à 3 minutes de génération" [ref=e120]:
+          - generic [ref=e121]: Créer ma vidéo
+          - generic [ref=e122]: 1 à 3 minutes de génération
+    - contentinfo [ref=e39]:
+      - paragraph [ref=e40]: Vos photos sont supprimées automatiquement après 24 heures.
+  - button "Open Next.js Dev Tools" [ref=e46] [cursor=pointer]
+  - alert [ref=e81]

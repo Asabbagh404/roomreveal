@@ -221,6 +221,23 @@ describe("generationReducer (pure, no mocks)", () => {
     expect(next.originalPhoto).toBe(state.originalPhoto);
   });
 
+  it("CONFIRM_ADVANCE_FROM video (« Créer ma vidéo ») advances to video and preserves emptyRoom + mask", () => {
+    const state: Generation = {
+      step: "emptyRoom",
+      epoch: 3,
+      mask: "fal://mask",
+      emptyRoom: "fal://empty",
+    };
+    const next = generationReducer(state, {
+      type: "CONFIRM_ADVANCE_FROM",
+      step: "video",
+    });
+    expect(next.step).toBe("video");
+    expect(next.epoch).toBe(4);
+    expect(next.emptyRoom).toBe("fal://empty"); // strict `<` keeps the step's own upstream artifacts
+    expect(next.mask).toBe("fal://mask");
+  });
+
   it("CONFIRM_ADVANCE_FROM upload also invalidates the mask draft", () => {
     const next = generationReducer(fullGeneration(), {
       type: "CONFIRM_ADVANCE_FROM",

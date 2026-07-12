@@ -1,0 +1,22 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - navigation "Parcours" [ref=e5]:
+        - list [ref=e6]:
+          - listitem [ref=e7]:
+            - button "Upload" [ref=e50] [cursor=pointer]
+          - listitem [ref=e12]:
+            - button "Masque" [ref=e83] [cursor=pointer]
+          - listitem [ref=e17]:
+            - button "Pièce vide" [ref=e105] [cursor=pointer]
+          - listitem [ref=e22]:
+            - button "4 Vidéo" [ref=e23]:
+              - generic [ref=e24]: "4"
+              - generic [ref=e25]: Vidéo
+        - paragraph [ref=e26]: "Étape 4 sur 4 : Vidéo"
+    - main [ref=e27]:
+      - paragraph [ref=e108]: Cette étape arrive bientôt.
+    - contentinfo [ref=e39]:
+      - paragraph [ref=e40]: Vos photos sont supprimées automatiquement après 24 heures.
+  - button "Open Next.js Dev Tools" [ref=e46] [cursor=pointer]
+  - alert [ref=e81]

@@ -14,6 +14,8 @@ interface GenerationButtonProps {
   disabled?: boolean;
   /** Explains the precondition when disabled (shown in a tooltip). */
   tooltip?: string;
+  /** Optional second line under the label (e.g. « 1 à 3 minutes de génération », FR-14). */
+  subtext?: string;
   onClick?: () => void;
 }
 
@@ -27,11 +29,19 @@ export function GenerationButton({
   children,
   disabled = false,
   tooltip,
+  subtext,
   onClick,
 }: GenerationButtonProps) {
   const button = (
-    <Button disabled={disabled} onClick={onClick}>
-      {children}
+    <Button
+      disabled={disabled}
+      onClick={onClick}
+      className={subtext ? "h-auto flex-col gap-0.5 py-2" : undefined}
+    >
+      <span>{children}</span>
+      {subtext && (
+        <span className="text-xs font-normal opacity-80">{subtext}</span>
+      )}
     </Button>
   );
 
