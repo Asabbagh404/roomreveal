@@ -72,6 +72,6 @@ development_status:
   4-1-generation-de-la-revelation-generation-flf: done
   4-2-lecteur-previsualisation-de-la-revelation: done
   4-3-telechargement-du-mp4: done
-  4-4-nouvelle-generation-cloture-du-cycle-de-vie: backlog
-  4-5-cout-unitaire-documente-deploiement-de-l-instance-demo: backlog
+  4-4-nouvelle-generation-cloture-du-cycle-de-vie: done
+  4-5-cout-unitaire-documente-deploiement-de-l-instance-demo: ready-for-dev
   epic-4-retrospective: optional

@@ -221,6 +221,16 @@ describe("generationReducer (pure, no mocks)", () => {
     expect(next.originalPhoto).toBe(state.originalPhoto);
   });
 
+  it("RESET returns a brand-new Generation (« Nouvelle Génération »)", () => {
+    const next = generationReducer(fullGeneration(), { type: "RESET" });
+    expect(next).toEqual(initialGeneration);
+    expect(next).not.toBe(initialGeneration); // fresh object, not the shared singleton
+    expect(next.step).toBe("upload");
+    expect(next.epoch).toBe(0);
+    expect(next.originalPhoto).toBeUndefined();
+    expect(next.reveal).toBeUndefined();
+  });
+
   it("VIDEO_SUCCEEDED stores reveal without advancing the step or bumping epoch", () => {
     const state: Generation = {
       step: "video",

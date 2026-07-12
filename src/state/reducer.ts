@@ -31,6 +31,7 @@ export type GenerationAction =
   | { type: "INPAINT_SUCCEEDED"; emptyRoomUrl: string }
   | { type: "REGENERATE_EMPTY_ROOM" }
   | { type: "VIDEO_SUCCEEDED"; revealUrl: string }
+  | { type: "RESET" }
   | { type: "GO_TO_STEP"; step: Step }
   // `step` is the DESTINATION to advance to (not the source): sets step=step and
   // invalidates everything strictly downstream of it. Named "…_FROM" for the
@@ -201,6 +202,15 @@ export function generationReducer(
         waitPhase: undefined,
         error: undefined,
       };
+
+    case "RESET":
+      // « Nouvelle Génération » (FR, Story 4.4): start a brand-new Generation
+      // from scratch (back to Upload, epoch 0, no artifacts). The epoch reset +
+      // the surfaces unmounting make any in-flight downstream job stale/aborted
+      // (AD-11/12); nothing from the finished Generation survives (AD-3).
+      // Fresh object (not the shared singleton) — consistent with every other
+      // branch and safe if initialGeneration ever gains mutable fields.
+      return { ...initialGeneration };
 
     case "GO_TO_STEP":
       // Back (or same) navigation only: never advance, never touch artifacts.

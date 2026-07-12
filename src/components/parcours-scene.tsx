@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useGeneration } from "@/state/generation-context";
 import { UploadZone } from "@/components/upload-zone";
 import { MaskSurface } from "@/components/mask-surface";
@@ -16,6 +17,20 @@ import { ErrorBanner } from "@/components/error-banner";
  */
 export function ParcoursScene() {
   const { state, dispatch } = useGeneration();
+
+  // Warn before a refresh/close discards an in-progress Generation (UX-DR15, no
+  // resume in v1, AD-3). Only while past Upload; the custom text is ignored by
+  // modern browsers (they show a generic prompt) but returnValue must be set.
+  const generationInProgress = state.step !== "upload";
+  useEffect(() => {
+    if (!generationInProgress) return;
+    function onBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      e.returnValue = "Votre Génération en cours sera perdue.";
+    }
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [generationInProgress]);
 
   // An error ends any wait (the reducer clears waitPhase on SET_ERROR); render
   // one transverse overlay at a time, error taking precedence.

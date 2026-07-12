@@ -4,6 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Pause, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { GenerationButton } from "@/components/generation-button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useGeneration } from "@/state/generation-context";
 import { downloadFile } from "@/lib/download-file";
 import { cn } from "@/lib/utils";
 
@@ -15,11 +24,13 @@ import { cn } from "@/lib/utils";
  * play/pause + « Revoir » (replay); NO native controls (which would expose a
  * scrubber / duration / download menu, forbidden by UX-DR10). `Espace` toggles
  * play/pause. No confetti, no toast — the video is the celebration (UX-DR15).
- * Presentation only: reads the fal URL, no pipeline/state logic (AR-LAYERS).
- * Actions below the player: « Revoir » (replay) + « Télécharger le MP4 » (Story
- * 4.3). « Nouvelle Génération » (4.4) will join them in the canonical order.
+ * Reads the fal URL; the only state intent it dispatches is RESET (« Nouvelle
+ * Génération », AR-LAYERS). Actions below the player, canonical order:
+ * « Nouvelle Génération » (ghost) · « Revoir » (outline) · « Télécharger le MP4 »
+ * (or) — Stories 4.2/4.3/4.4.
  */
 export function RevealPlayer({ src }: { src: string }) {
+  const { dispatch } = useGeneration();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   // Gold glow shows on the first launch and fades once the first play finishes
@@ -51,6 +62,9 @@ export function RevealPlayer({ src }: { src: string }) {
   // cross-origin <a download> would just navigate). Local busy + inline error.
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  // Tracked so « Nouvelle Génération » can skip the confirm once the reveal is
+  // safely saved (UX-DR16 — only guard against losing an un-downloaded reveal).
+  const [hasDownloaded, setHasDownloaded] = useState(false);
   // Guard state updates that resolve after the user navigated away mid-download
   // (the fetch can take a while for a multi-MB MP4) — no setState-after-unmount.
   const mountedRef = useRef(true);
@@ -66,12 +80,21 @@ export function RevealPlayer({ src }: { src: string }) {
     setDownloadError(null);
     try {
       await downloadFile(src, "roomreveal.mp4");
+      if (mountedRef.current) setHasDownloaded(true);
     } catch {
       if (mountedRef.current) setDownloadError("Le téléchargement a échoué. Réessayez.");
     } finally {
       if (mountedRef.current) setDownloading(false);
     }
   }, [src, downloading]);
+
+  // « Nouvelle Génération » (Story 4.4): start over from a blank Upload. Confirm
+  // first if the reveal hasn't been downloaded (UX-DR16), else reset directly.
+  const [confirmingNew, setConfirmingNew] = useState(false);
+  const newGeneration = useCallback(() => {
+    if (hasDownloaded) dispatch({ type: "RESET" });
+    else setConfirmingNew(true);
+  }, [hasDownloaded, dispatch]);
 
   // `Espace` = play/pause, but never steal it from a focused control (button,
   // etc.) and always preventDefault so the page doesn't scroll.
@@ -129,9 +152,12 @@ export function RevealPlayer({ src }: { src: string }) {
       </div>
 
       {/* Actions sous le lecteur — ordre canonique (la plus forte en dernier) :
-          « Nouvelle Génération » (ghost, Story 4.4) · « Revoir » (outline) ·
-          « Télécharger le MP4 » (or). 4.4 insérera « Nouvelle Génération » en tête. */}
+          « Nouvelle Génération » (ghost) · « Revoir » (outline) · « Télécharger
+          le MP4 » (or). */}
       <div className="flex items-center gap-3">
+        <Button variant="ghost" onClick={newGeneration}>
+          Nouvelle Génération
+        </Button>
         <Button variant="outline" onClick={replay}>
           Revoir
         </Button>
@@ -144,6 +170,37 @@ export function RevealPlayer({ src }: { src: string }) {
           {downloadError}
         </p>
       )}
+
+      {/* Confirm before discarding an un-downloaded Révélation (UX-DR16). */}
+      <Dialog
+        open={confirmingNew}
+        onOpenChange={(open) => {
+          if (!open) setConfirmingNew(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Commencer une nouvelle Génération ?</DialogTitle>
+            <DialogDescription>
+              Votre Révélation actuelle sera perdue si vous ne l’avez pas
+              téléchargée.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmingNew(false)}>
+              Annuler
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmingNew(false);
+                dispatch({ type: "RESET" });
+              }}
+            >
+              Nouvelle Génération
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
