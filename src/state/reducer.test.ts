@@ -221,6 +221,43 @@ describe("generationReducer (pure, no mocks)", () => {
     expect(next.originalPhoto).toBe(state.originalPhoto);
   });
 
+  it("REGENERATE_EMPTY_ROOM clears emptyRoom + reveal, bumps epoch, preserves mask/photo, stays on emptyRoom", () => {
+    const photo = {
+      blob: new Blob(["p"]),
+      falUrl: "fal://photo",
+      detectionBlob: new Blob(["d"]),
+      width: 1024,
+      height: 768,
+    };
+    const state: Generation = {
+      step: "emptyRoom",
+      epoch: 4,
+      originalPhoto: photo,
+      mask: "fal://mask",
+      maskDraft: { detectedMaskUrl: "d" },
+      emptyRoom: "fal://empty",
+      reveal: "fal://reveal",
+    };
+    const next = generationReducer(state, { type: "REGENERATE_EMPTY_ROOM" });
+    expect(next).not.toBe(state); // immutable: fresh object
+    expect(next.emptyRoom).toBeUndefined(); // cleared → entry effect re-runs inpaint
+    expect(next.reveal).toBeUndefined(); // downstream invalidated (AC3)
+    expect(next.epoch).toBe(5); // bumped → aborts in-flight downstream (AD-11/12)
+    expect(next.step).toBe("emptyRoom"); // never returns to mask/upload
+    expect(next.mask).toBe("fal://mask"); // same validated mask (FR-9)
+    expect(next.maskDraft).toEqual({ detectedMaskUrl: "d" });
+    expect(next.originalPhoto).toBe(photo); // memoized falUrl reused, no re-upload
+    expect(next.waitPhase).toBeUndefined(); // fresh attempt → no stale phase (AD-14)
+    expect(next.error).toBeUndefined();
+  });
+
+  it("REGENERATE_EMPTY_ROOM is a no-op off the emptyRoom step or with no empty room yet", () => {
+    const onMask: Generation = { step: "mask", epoch: 1, mask: "fal://mask", emptyRoom: "fal://empty" };
+    expect(generationReducer(onMask, { type: "REGENERATE_EMPTY_ROOM" })).toBe(onMask);
+    const noEmpty: Generation = { step: "emptyRoom", epoch: 1, mask: "fal://mask" };
+    expect(generationReducer(noEmpty, { type: "REGENERATE_EMPTY_ROOM" })).toBe(noEmpty);
+  });
+
   it("CONFIRM_ADVANCE_FROM video (« Créer ma vidéo ») advances to video and preserves emptyRoom + mask", () => {
     const state: Generation = {
       step: "emptyRoom",

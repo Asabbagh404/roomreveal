@@ -5,6 +5,7 @@ import { useGeneration } from "@/state/generation-context";
 import { runInpaint } from "@/state/effects";
 import { usePhotoObjectUrl } from "@/components/use-photo-object-url";
 import { GenerationButton } from "@/components/generation-button";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -82,19 +83,35 @@ export function EmptyRoomSurface() {
         <ComparisonCard label="Pièce vide" src={state.emptyRoom!} />
       </div>
 
-      <GenerationButton
-        subtext="1 à 3 minutes de génération"
-        onClick={() => {
-          // Guard against a double-click (each dispatch would bump the epoch):
-          // only advance while still on this step. CONFIRM_ADVANCE_FROM's `step`
-          // is the DESTINATION (here "video"), not the source — see reducer.
-          if (state.step === "emptyRoom") {
-            dispatch({ type: "CONFIRM_ADVANCE_FROM", step: "video" });
-          }
-        }}
-      >
-        Créer ma vidéo
-      </GenerationButton>
+      <div className="flex flex-col items-center gap-3">
+        {/* Gold action stays the single primary (UX-DR13). */}
+        <GenerationButton
+          subtext="1 à 3 minutes de génération"
+          onClick={() => {
+            // Guard against a double-click (each dispatch would bump the epoch):
+            // only advance while still on this step. CONFIRM_ADVANCE_FROM's `step`
+            // is the DESTINATION (here "video"), not the source — see reducer.
+            if (state.step === "emptyRoom") {
+              dispatch({ type: "CONFIRM_ADVANCE_FROM", step: "video" });
+            }
+          }}
+        >
+          Créer ma vidéo
+        </GenerationButton>
+
+        {/* Secondary action: re-run inpaint with the SAME validated mask (FR-9).
+            Just dispatch — the entry effect re-fires runInpaint once emptyRoom is
+            cleared (AR-LAYERS). No limit in v1. */}
+        <Button
+          variant="outline"
+          onClick={() => dispatch({ type: "REGENERATE_EMPTY_ROOM" })}
+        >
+          Régénérer
+        </Button>
+        <p className="text-sm text-texte-secondaire">
+          Un doute ? Régénérez : chaque Pièce vide est unique.
+        </p>
+      </div>
     </div>
   );
 }

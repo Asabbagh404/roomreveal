@@ -29,6 +29,7 @@ export type GenerationAction =
   | { type: "SET_MASK_BUFFER"; buffer: MaskBuffer }
   | { type: "MASK_VALIDATED"; maskUrl: string }
   | { type: "INPAINT_SUCCEEDED"; emptyRoomUrl: string }
+  | { type: "REGENERATE_EMPTY_ROOM" }
   | { type: "GO_TO_STEP"; step: Step }
   // `step` is the DESTINATION to advance to (not the source): sets step=step and
   // invalidates everything strictly downstream of it. Named "…_FROM" for the
@@ -165,6 +166,25 @@ export function generationReducer(
       return {
         ...state,
         emptyRoom: action.emptyRoomUrl,
+        waitPhase: undefined,
+        error: undefined,
+      };
+
+    case "REGENERATE_EMPTY_ROOM":
+      // Régénération (FR-9): re-run inpaint with the SAME validated mask, without
+      // revisiting earlier steps. No-op unless a result is currently shown on the
+      // emptyRoom step. Clearing `emptyRoom` re-satisfies the surface's entry-effect
+      // guard so runInpaint fires again (orchestration stays in effects, AR-LAYERS).
+      // invalidateDownstream("emptyRoom") drops any `reveal` (strict `<` keeps mask/
+      // maskDraft); the epoch bump aborts any in-flight downstream video job — a
+      // Révélation can never coexist with an emptyRoom that isn't its own (AC3,
+      // AR-INVALIDATION/AD-11/12). mask + originalPhoto (memoized falUrl) preserved.
+      if (state.step !== "emptyRoom" || state.emptyRoom === undefined) return state;
+      return {
+        ...state,
+        ...invalidateDownstream("emptyRoom"),
+        emptyRoom: undefined,
+        epoch: state.epoch + 1,
         waitPhase: undefined,
         error: undefined,
       };
