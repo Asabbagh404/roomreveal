@@ -28,6 +28,7 @@ export type GenerationAction =
   | { type: "DETECT_SUCCEEDED"; detectedMaskUrl: string | null }
   | { type: "SET_MASK_BUFFER"; buffer: MaskBuffer }
   | { type: "MASK_VALIDATED"; maskUrl: string }
+  | { type: "INPAINT_SUCCEEDED"; emptyRoomUrl: string }
   | { type: "GO_TO_STEP"; step: Step }
   | { type: "CONFIRM_ADVANCE_FROM"; step: Step }
   | { type: "SET_WAIT_PHASE"; phase: WaitPhase }
@@ -145,6 +146,22 @@ export function generationReducer(
         mask: action.maskUrl,
         step: "emptyRoom",
         epoch: state.epoch + 1,
+        waitPhase: undefined,
+        error: undefined,
+      };
+
+    case "INPAINT_SUCCEEDED":
+      // Store the generated Pièce vide. This is a PRODUCTION, not a transition:
+      // the step stays "emptyRoom" (the user reviews it; "Créer ma vidéo" will
+      // advance later) and the epoch does NOT bump — nothing downstream is
+      // invalidated (AD-11). Mirrors DETECT_SUCCEEDED. No `step` guard is needed:
+      // back-nav unmounts the surface, whose effect aborts the run, so the effect
+      // layer drops the result before dispatch (AD-12); and even a late set of
+      // emptyRoom on another step is harmless — it is preserved upstream and
+      // re-invalidated on the next advance.
+      return {
+        ...state,
+        emptyRoom: action.emptyRoomUrl,
         waitPhase: undefined,
         error: undefined,
       };

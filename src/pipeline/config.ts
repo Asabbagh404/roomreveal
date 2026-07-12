@@ -57,10 +57,12 @@ export const LOCAL_DETECT_TIMEOUT_MS = 180_000;
  * the proxy's default allowed URL patterns (a separate, URL-pattern gate).
  *
  * Only the models actually wired in the current epic are listed, to keep the
- * public proxy's reachable model surface minimal — `inpaint` (Epic 3) and
- * `video` (Epic 4) are added to this allowlist when their adapters ship.
+ * public proxy's reachable model surface minimal — `video` (Epic 4) is added to
+ * this allowlist when its adapter ships.
  */
 export const FAL_ALLOWED_ENDPOINTS: readonly string[] = [
   `${MODELS.detect}/**`,
   `${MODELS.detect}`,
+  `${MODELS.inpaint}/**`,
+  `${MODELS.inpaint}`,
 ];

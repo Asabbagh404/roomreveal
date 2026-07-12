@@ -3,14 +3,15 @@
 import { useGeneration } from "@/state/generation-context";
 import { UploadZone } from "@/components/upload-zone";
 import { MaskSurface } from "@/components/mask-surface";
+import { EmptyRoomSurface } from "@/components/empty-room-surface";
 import { WaitPanel } from "@/components/wait-panel";
 import { ErrorBanner } from "@/components/error-banner";
 
 /**
  * Renders the scene for the current Parcours step, plus the transverse overlays
- * (wait panel, error banner) that every step inherits. Only the Upload step is
- * implemented in Epic 1; Masque / Pièce vide / Vidéo surfaces arrive with their
- * epics. The overlays activate once effects set waitPhase / error (Epic 2+).
+ * (wait panel, error banner) that every step inherits. Upload / Masque / Pièce
+ * vide surfaces are implemented; the Vidéo surface arrives with Epic 4. The
+ * overlays activate once effects set waitPhase / error.
  */
 export function ParcoursScene() {
   const { state, dispatch } = useGeneration();
@@ -61,6 +62,10 @@ function StepSurface() {
 
   if (state.step === "mask") {
     return <MaskSurface />;
+  }
+
+  if (state.step === "emptyRoom") {
+    return <EmptyRoomSurface />;
   }
 
   return (

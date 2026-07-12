@@ -1,4 +1,4 @@
-import { DETECT_BACKEND, detect, detectLocal, uploadArtifact } from "@/pipeline";
+import { DETECT_BACKEND, detect, detectLocal, inpaint, uploadArtifact } from "@/pipeline";
 import { encodeMaskPng } from "@/lib/mask-encode";
 import { isBufferEmpty } from "@/lib/mask-buffer";
 import type { GenerationAction } from "./reducer";
@@ -65,6 +65,55 @@ export async function runDetect(
     dispatch({
       type: "SET_ERROR",
       error: isStepError(err) ? err : makeStepError("detect", true),
+    });
+  }
+}
+
+/**
+ * Generates the Pièce vide (AD-12): runs the inpaint adapter on the canonical
+ * photo + validated mask and stores the result URL (INPAINT_SUCCEEDED). The
+ * canonical photo is uploaded here, lazily — detection only uploaded the
+ * higher-res copy (AD-2 amendment) — and its fal URL is memoized (PHOTO_UPLOADED)
+ * so a régénération (Story 3.3) reuses it. A result is dropped without dispatch
+ * once the run is dead (epoch moved on or signal aborted). Failures become a
+ * retryable SET_ERROR (AD-8), unlike runValidateMask which throws. AR-LAYERS:
+ * the pipeline calls live here, never in the component.
+ */
+export async function runInpaint(
+  state: Generation,
+  dispatch: Dispatch,
+  { signal, isStale }: RunContext,
+): Promise<void> {
+  const photo = state.originalPhoto;
+  const maskUrl = state.mask;
+  if (photo === undefined || maskUrl === undefined) return;
+
+  const dead = () => signal.aborted || isStale();
+  const onPhase = (phase: WaitPhase) => {
+    if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase });
+  };
+
+  try {
+    // Upload the canonical photo once per attempt (≤1024, AD-2) and reuse the
+    // memoized URL. NOT the detection copy — flux fill requires image and mask to
+    // share dimensions, and the mask is at canonical dims (AD-7).
+    let photoUrl = photo.falUrl;
+    if (photoUrl === undefined) {
+      if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase: "uploading" });
+      photoUrl = await uploadArtifact(photo.blob);
+      if (dead()) return;
+      dispatch({ type: "PHOTO_UPLOADED", falUrl: photoUrl });
+    }
+
+    const result = await inpaint(photoUrl, maskUrl, { signal, onPhase });
+    if (dead()) return; // superseded or cancelled — drop the result
+
+    dispatch({ type: "INPAINT_SUCCEEDED", emptyRoomUrl: result.emptyRoom });
+  } catch (err) {
+    if (dead()) return; // a cancelled/superseded run must not paint an error
+    dispatch({
+      type: "SET_ERROR",
+      error: isStepError(err) ? err : makeStepError("inpaint", true),
     });
   }
 }

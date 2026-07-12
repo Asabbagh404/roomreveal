@@ -3,11 +3,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // Mock the pipeline at the adapter boundary (AR-TESTS) — never mock @fal-ai/client here.
 const detect = vi.fn();
 const detectLocal = vi.fn();
+const inpaint = vi.fn();
 const uploadArtifact = vi.fn();
 vi.mock("@/pipeline", () => ({
   DETECT_BACKEND: "fal", // these tests cover the default (fal) orchestration path
   detect: (...a: unknown[]) => detect(...a),
   detectLocal: (...a: unknown[]) => detectLocal(...a),
+  inpaint: (...a: unknown[]) => inpaint(...a),
   uploadArtifact: (...a: unknown[]) => uploadArtifact(...a),
 }));
 
@@ -18,7 +20,7 @@ vi.mock("@/lib/mask-encode", () => ({
   encodeMaskPng: (...a: unknown[]) => encodeMaskPng(...a),
 }));
 
-import { runDetect, runValidateMask } from "./effects";
+import { runDetect, runInpaint, runValidateMask } from "./effects";
 import type { Generation } from "./types";
 
 const paintedBuffer = { data: new Uint8Array([0, 255, 0, 0]), width: 2, height: 2 };
@@ -38,9 +40,21 @@ const signal = new AbortController().signal;
 
 afterEach(() => {
   detect.mockReset();
+  inpaint.mockReset();
   uploadArtifact.mockReset();
   encodeMaskPng.mockClear();
 });
+
+/** State sitting at the emptyRoom step with a validated mask (post-2.3). */
+function emptyRoomState(overrides: Partial<Generation> = {}): Generation {
+  return {
+    step: "emptyRoom",
+    epoch: 2,
+    originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]), width: 1024, height: 768 },
+    mask: "https://fal/mask.png",
+    ...overrides,
+  };
+}
 
 describe("runDetect (AD-12 orchestration)", () => {
   it("uploads the detection copy once, then dispatches DETECTION_UPLOADED and DETECT_SUCCEEDED", async () => {
@@ -221,5 +235,152 @@ describe("runValidateMask (AD-13 validation)", () => {
     expect(dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "SET_ERROR" }),
     );
+  });
+});
+
+describe("runInpaint (AD-12 orchestration)", () => {
+  it("uploads the canonical photo once, then dispatches PHOTO_UPLOADED and INPAINT_SUCCEEDED", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/photo.jpg");
+    inpaint.mockResolvedValue({ emptyRoom: "https://fal/empty.jpg" });
+    const dispatch = vi.fn();
+
+    await runInpaint(emptyRoomState(), dispatch, { signal, isStale: notStale });
+
+    expect(uploadArtifact).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "PHOTO_UPLOADED",
+      falUrl: "https://fal/photo.jpg",
+    });
+    expect(inpaint).toHaveBeenCalledWith(
+      "https://fal/photo.jpg",
+      "https://fal/mask.png",
+      expect.anything(),
+    );
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "INPAINT_SUCCEEDED",
+      emptyRoomUrl: "https://fal/empty.jpg",
+    });
+  });
+
+  it("skips the upload when the canonical photo already has a fal URL (memoized)", async () => {
+    inpaint.mockResolvedValue({ emptyRoom: "https://fal/empty.jpg" });
+    const dispatch = vi.fn();
+    const state = emptyRoomState({
+      originalPhoto: {
+        blob: new Blob(["p"]),
+        falUrl: "https://fal/photo.jpg",
+        detectionBlob: new Blob(["d"]),
+        width: 1024,
+        height: 768,
+      },
+    });
+
+    await runInpaint(state, dispatch, { signal, isStale: notStale });
+
+    expect(uploadArtifact).not.toHaveBeenCalled();
+    expect(inpaint).toHaveBeenCalledWith(
+      "https://fal/photo.jpg",
+      "https://fal/mask.png",
+      expect.anything(),
+    );
+  });
+
+  it("is a no-op when the mask or the photo is missing (never calls inpaint)", async () => {
+    inpaint.mockResolvedValue({ emptyRoom: "u" });
+    const dispatch = vi.fn();
+
+    await runInpaint(emptyRoomState({ mask: undefined }), dispatch, { signal, isStale: notStale });
+    await runInpaint(emptyRoomState({ originalPhoto: undefined }), dispatch, { signal, isStale: notStale });
+
+    expect(inpaint).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("drops a result that goes stale mid-flight (epoch bumped after inpaint starts)", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/photo.jpg");
+    let stale = false;
+    inpaint.mockImplementation(() => {
+      stale = true;
+      return Promise.resolve({ emptyRoom: "https://fal/empty.jpg" });
+    });
+    const dispatch = vi.fn();
+
+    await runInpaint(emptyRoomState(), dispatch, { signal, isStale: () => stale });
+
+    expect(
+      dispatch.mock.calls.some((c) => c[0].type === "INPAINT_SUCCEEDED"),
+    ).toBe(false);
+  });
+
+  it("does not dispatch when the signal is aborted, even if the epoch is unchanged", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/photo.jpg");
+    inpaint.mockResolvedValue({ emptyRoom: "https://fal/empty.jpg" });
+    const dispatch = vi.fn();
+    const aborted = new AbortController();
+    aborted.abort();
+
+    await runInpaint(emptyRoomState(), dispatch, {
+      signal: aborted.signal,
+      isStale: () => false,
+    });
+
+    expect(
+      dispatch.mock.calls.some(
+        (c) => c[0].type === "INPAINT_SUCCEEDED" || c[0].type === "SET_ERROR",
+      ),
+    ).toBe(false);
+  });
+
+  it("dispatches SET_ERROR with the adapter's inpaint StepError on failure", async () => {
+    inpaint.mockRejectedValue({
+      step: "inpaint",
+      retryable: true,
+      userMessage: "La pièce vide n'a pas abouti.",
+    });
+    const dispatch = vi.fn();
+    const state = emptyRoomState({
+      originalPhoto: {
+        blob: new Blob(["p"]),
+        falUrl: "https://fal/photo.jpg",
+        detectionBlob: new Blob(["d"]),
+        width: 1024,
+        height: 768,
+      },
+    });
+
+    await runInpaint(state, dispatch, { signal, isStale: notStale });
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "SET_ERROR",
+        error: expect.objectContaining({ step: "inpaint" }),
+      }),
+    );
+  });
+
+  it("forwards adapter phases as SET_WAIT_PHASE", async () => {
+    const dispatch = vi.fn();
+    const state = emptyRoomState({
+      originalPhoto: {
+        blob: new Blob(["p"]),
+        falUrl: "https://fal/photo.jpg",
+        detectionBlob: new Blob(["d"]),
+        width: 1024,
+        height: 768,
+      },
+    });
+    inpaint.mockImplementation(
+      (_p: string, _m: string, o: { onPhase: (p: string) => void }) => {
+        o.onPhase("generating");
+        return Promise.resolve({ emptyRoom: "https://fal/empty.jpg" });
+      },
+    );
+
+    await runInpaint(state, dispatch, { signal, isStale: notStale });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "SET_WAIT_PHASE",
+      phase: "generating",
+    });
   });
 });

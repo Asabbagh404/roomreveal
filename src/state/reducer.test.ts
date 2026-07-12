@@ -191,6 +191,36 @@ describe("generationReducer (pure, no mocks)", () => {
     expect(next.epoch).toBe(6);
   });
 
+  it("INPAINT_SUCCEEDED stores emptyRoom without advancing the step or bumping epoch", () => {
+    const state: Generation = {
+      step: "emptyRoom",
+      epoch: 4,
+      originalPhoto: {
+        blob: new Blob(["p"]),
+        falUrl: "fal://photo",
+        detectionBlob: new Blob(["d"]),
+        width: 1024,
+        height: 768,
+      },
+      mask: "fal://mask",
+      maskDraft: { detectedMaskUrl: "d" },
+      waitPhase: "generating",
+    };
+    const next = generationReducer(state, {
+      type: "INPAINT_SUCCEEDED",
+      emptyRoomUrl: "fal://empty",
+    });
+    expect(next.emptyRoom).toBe("fal://empty");
+    expect(next.step).toBe("emptyRoom"); // stays — "Créer ma vidéo" advances later
+    expect(next.epoch).toBe(4); // production, not an invalidation (AD-11)
+    expect(next.waitPhase).toBeUndefined();
+    expect(next.error).toBeUndefined();
+    // Upstream artifacts preserved.
+    expect(next.mask).toBe("fal://mask");
+    expect(next.maskDraft).toEqual({ detectedMaskUrl: "d" });
+    expect(next.originalPhoto).toBe(state.originalPhoto);
+  });
+
   it("CONFIRM_ADVANCE_FROM upload also invalidates the mask draft", () => {
     const next = generationReducer(fullGeneration(), {
       type: "CONFIRM_ADVANCE_FROM",

@@ -50,8 +50,14 @@ export const FURNITURE_CATEGORIES: readonly string[] = [
   "chair",
 ];
 
-/** Empty-room inpainting prompt — posed for Epic 3. */
-export const EMPTY_ROOM_PROMPT = "";
+/**
+ * Empty-room inpainting prompt (flux-pro/v1/fill, Story 3.1). Describes ONLY
+ * what fills the masked (white) regions once the furniture is gone — bare floor
+ * and walls. Generic across rooms; the model preserves the unmasked pixels.
+ * [À calibrer au live]
+ */
+export const EMPTY_ROOM_PROMPT =
+  "empty room, bare floor and walls, no furniture, consistent lighting and perspective, photorealistic interior";
 
 /** FLF motion prompt for the "mix côtés + plafond" preset — posed for Epic 4. */
 export const REVEAL_MOTION_PROMPT = "";

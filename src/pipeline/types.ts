@@ -16,3 +16,14 @@ export interface DetectResult {
   initialMask: string | null;
   categories: string[];
 }
+
+/**
+ * Result of the inpaint adapter (AD-5). `emptyRoom` is the URL of the generated
+ * Pièce vide — at canonical dimensions by construction (flux fill preserves the
+ * input image's size, and photo + mask share the canonical dims per AD-2/AD-7).
+ * The adapter throws a retryable StepError rather than returning an empty result,
+ * so `emptyRoom` is always a real URL.
+ */
+export interface InpaintResult {
+  emptyRoom: string;
+}
