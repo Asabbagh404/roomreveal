@@ -51,10 +51,11 @@ export const FURNITURE_CATEGORIES: readonly string[] = [
 ];
 
 /**
- * Empty-room inpainting prompt (flux-pro/v1/fill, Story 3.1). Describes ONLY
- * what fills the masked (white) regions once the furniture is gone — bare floor
- * and walls. Generic across rooms; the model preserves the unmasked pixels.
- * [À calibrer au live]
+ * Empty-room inpainting prompt. CURRENTLY UNUSED: the live bench (2026-07-12)
+ * showed prompt-driven fill models (flux-pro/v1/fill) *reconstruct* furniture
+ * instead of removing it regardless of prompt, so the inpaint role now uses an
+ * object-eraser (fal-ai/bria/eraser) which takes no prompt. Kept for a possible
+ * future prompt-driven model. [À calibrer au live si réutilisé]
  */
 export const EMPTY_ROOM_PROMPT =
   "empty room, bare floor and walls, no furniture, consistent lighting and perspective, photorealistic interior";

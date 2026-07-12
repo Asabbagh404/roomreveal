@@ -1,0 +1,32 @@
+- generic [active] [ref=f26e1]:
+  - generic [ref=f26e2]:
+    - banner [ref=f26e3]:
+      - navigation "Parcours" [ref=f26e5]:
+        - list [ref=f26e6]:
+          - listitem [ref=f26e7]:
+            - button "1 Upload" [ref=f26e8]:
+              - generic [ref=f26e9]: "1"
+              - generic [ref=f26e10]: Upload
+          - listitem [ref=f26e12]:
+            - button "2 Masque" [disabled] [ref=f26e13]:
+              - generic [ref=f26e14]: "2"
+              - generic [ref=f26e15]: Masque
+          - listitem [ref=f26e17]:
+            - button "3 Pièce vide" [disabled] [ref=f26e18]:
+              - generic [ref=f26e19]: "3"
+              - generic [ref=f26e20]: Pièce vide
+          - listitem [ref=f26e22]:
+            - button "4 Vidéo" [disabled] [ref=f26e23]:
+              - generic [ref=f26e24]: "4"
+              - generic [ref=f26e25]: Vidéo
+        - paragraph [ref=f26e26]: "Étape 1 sur 4 : Upload"
+    - main [ref=f26e27]:
+      - generic [ref=f26e29]:
+        - heading "Une photo. Une pièce qui se meuble toute seule." [level=1] [ref=f26e30]
+        - generic [ref=f26e31]:
+          - button "Déposez ou choisissez la photo de votre pièce meublée" [ref=f26e32]:
+            - paragraph [ref=f26e37]: Déposez la photo de votre pièce meublée. JPEG ou PNG.
+          - button "Choose File" [ref=f26e38]
+    - contentinfo [ref=f26e39]:
+      - paragraph [ref=f26e40]: Vos photos sont supprimées automatiquement après 24 heures.
+  - button "Open Next.js Dev Tools" [ref=f26e46] [cursor=pointer]

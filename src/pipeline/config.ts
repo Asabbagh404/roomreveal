@@ -8,8 +8,13 @@
 /** fal model IDs by pipeline role (AR-MODELS). */
 export const MODELS = {
   detect: "fal-ai/sam-3/image",
-  // Posed here now; consumed by Epic 3 / Epic 4.
-  inpaint: "fal-ai/flux-pro/v1/fill",
+  // Object-ERASER, not a general inpainter. Live bench (2026-07-12) on a real
+  // kitchen proved flux-pro/v1/fill *reconstructs* furniture instead of removing
+  // it (a general fill model "completes" the scene) — prompt tuning did not help.
+  // bria/eraser fills the masked region with plausible background (bare wall/floor),
+  // which is the declutter we need (FR-8, SM-2). Mask white = area erased.
+  inpaint: "fal-ai/bria/eraser",
+  // Consumed by Epic 4.
   video: "fal-ai/kling-video/o1/image-to-video",
 } as const;
 

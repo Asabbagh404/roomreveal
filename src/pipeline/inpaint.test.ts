@@ -17,25 +17,21 @@ afterEach(() => {
 });
 
 describe("inpaint adapter (AD-5)", () => {
-  it("returns the first generated image URL as the empty room", async () => {
+  it("returns the erased image URL as the empty room", async () => {
     subscribe.mockResolvedValue({
-      data: {
-        images: [
-          { url: "https://fal/empty.jpg", width: 1024, height: 768 },
-        ],
-      },
+      data: { image: { url: "https://fal/empty.png", width: 1024, height: 768 } },
     });
     const result = await inpaint("https://fal/photo.jpg", "https://fal/mask.png", opts);
-    expect(result.emptyRoom).toBe("https://fal/empty.jpg");
+    expect(result.emptyRoom).toBe("https://fal/empty.png");
   });
 
-  it("sends the photo and mask URLs to the model input", async () => {
-    subscribe.mockResolvedValue({ data: { images: [{ url: "u" }] } });
+  it("sends the photo + mask URLs and a manual mask type to the model input", async () => {
+    subscribe.mockResolvedValue({ data: { image: { url: "u" } } });
     await inpaint("https://fal/photo.jpg", "https://fal/mask.png", opts);
     const [, cfg] = subscribe.mock.calls[0] as [string, { input: Record<string, unknown> }];
     expect(cfg.input.image_url).toBe("https://fal/photo.jpg");
     expect(cfg.input.mask_url).toBe("https://fal/mask.png");
-    expect(typeof cfg.input.prompt).toBe("string");
+    expect(cfg.input.mask_type).toBe("manual");
   });
 
   it("maps queue statuses to wait phases", async () => {
@@ -45,7 +41,7 @@ describe("inpaint adapter (AD-5)", () => {
         cfg.onQueueUpdate({ status: "IN_QUEUE" });
         cfg.onQueueUpdate({ status: "IN_PROGRESS" });
         cfg.onQueueUpdate({ status: "COMPLETED" });
-        return Promise.resolve({ data: { images: [{ url: "u" }] } });
+        return Promise.resolve({ data: { image: { url: "u" } } });
       },
     );
     await inpaint("https://fal/photo.jpg", "https://fal/mask.png", { ...opts, onPhase });
@@ -55,7 +51,7 @@ describe("inpaint adapter (AD-5)", () => {
   });
 
   it("throws a retryable inpaint StepError when the model returns no image", async () => {
-    subscribe.mockResolvedValue({ data: { images: [] } });
+    subscribe.mockResolvedValue({ data: {} });
     const rejection = await inpaint("https://fal/photo.jpg", "https://fal/mask.png", opts).catch(
       (e) => e,
     );
@@ -63,7 +59,7 @@ describe("inpaint adapter (AD-5)", () => {
   });
 
   it("treats an empty-string image URL as a failure (no silent empty result)", async () => {
-    subscribe.mockResolvedValue({ data: { images: [{ url: "" }] } });
+    subscribe.mockResolvedValue({ data: { image: { url: "" } } });
     const rejection = await inpaint("https://fal/photo.jpg", "https://fal/mask.png", opts).catch(
       (e) => e,
     );
