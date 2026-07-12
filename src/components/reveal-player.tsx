@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pause, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GenerationButton } from "@/components/generation-button";
+import { downloadFile } from "@/lib/download-file";
 import { cn } from "@/lib/utils";
 
 /**
@@ -14,8 +16,8 @@ import { cn } from "@/lib/utils";
  * scrubber / duration / download menu, forbidden by UX-DR10). `Espace` toggles
  * play/pause. No confetti, no toast — the video is the celebration (UX-DR15).
  * Presentation only: reads the fal URL, no pipeline/state logic (AR-LAYERS).
- * The download (4.3) and « Nouvelle Génération » (4.4) actions will join
- * « Revoir » below the player in the canonical order.
+ * Actions below the player: « Revoir » (replay) + « Télécharger le MP4 » (Story
+ * 4.3). « Nouvelle Génération » (4.4) will join them in the canonical order.
  */
 export function RevealPlayer({ src }: { src: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -43,6 +45,33 @@ export function RevealPlayer({ src }: { src: string }) {
     v.currentTime = 0;
     void v.play().catch(() => {});
   }, []);
+
+  // Download the MP4 straight from its fal URL (public GET, never proxied/
+  // re-hosted — AD-4/AD-9). fetch → blob → objectURL → <a download> (a bare
+  // cross-origin <a download> would just navigate). Local busy + inline error.
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  // Guard state updates that resolve after the user navigated away mid-download
+  // (the fetch can take a while for a multi-MB MP4) — no setState-after-unmount.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  const download = useCallback(async () => {
+    if (downloading) return;
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      await downloadFile(src, "roomreveal.mp4");
+    } catch {
+      if (mountedRef.current) setDownloadError("Le téléchargement a échoué. Réessayez.");
+    } finally {
+      if (mountedRef.current) setDownloading(false);
+    }
+  }, [src, downloading]);
 
   // `Espace` = play/pause, but never steal it from a focused control (button,
   // etc.) and always preventDefault so the page doesn't scroll.
@@ -99,9 +128,22 @@ export function RevealPlayer({ src }: { src: string }) {
         </button>
       </div>
 
-      <Button variant="outline" onClick={replay}>
-        Revoir
-      </Button>
+      {/* Actions sous le lecteur — ordre canonique (la plus forte en dernier) :
+          « Nouvelle Génération » (ghost, Story 4.4) · « Revoir » (outline) ·
+          « Télécharger le MP4 » (or). 4.4 insérera « Nouvelle Génération » en tête. */}
+      <div className="flex items-center gap-3">
+        <Button variant="outline" onClick={replay}>
+          Revoir
+        </Button>
+        <GenerationButton disabled={downloading} onClick={download}>
+          {downloading ? "Téléchargement…" : "Télécharger le MP4"}
+        </GenerationButton>
+      </div>
+      {downloadError !== null && (
+        <p role="alert" aria-live="assertive" className="text-sm text-erreur">
+          {downloadError}
+        </p>
+      )}
     </div>
   );
 }
