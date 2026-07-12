@@ -45,3 +45,6 @@ next-env.d.ts
 local-detect/.venv/
 local-detect/__pycache__/
 **/__pycache__/
+
+# Local review artifacts (generated videos, not source)
+resultat/

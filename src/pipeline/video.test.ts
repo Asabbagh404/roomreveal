@@ -29,6 +29,7 @@ describe("video adapter (AD-5, FLF)", () => {
     expect(cfg.input.start_image_url).toBe("https://fal/empty.png"); // Pièce vide = 1re frame
     expect(cfg.input.end_image_url).toBe("https://fal/photo.jpg"); // Photo originale = dernière frame
     expect(typeof cfg.input.prompt).toBe("string");
+    expect(typeof cfg.input.negative_prompt).toBe("string"); // anti-morph (calibrated)
     expect(cfg.input.duration).toBe("5");
   });
 

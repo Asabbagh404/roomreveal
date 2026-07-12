@@ -85,10 +85,35 @@ export const EMPTY_ROOM_PROMPT =
 
 /**
  * FLF motion prompt (kling o1, Story 4.1) — the "mix côtés + plafond" preset.
- * The video morphs the empty room (first frame) into the furnished photo (last
- * frame), so it must describe furniture ARRIVING in motion — floating/settling
- * into place from the sides and the ceiling — a smooth cinematic reveal, never
- * a fade or an instant pop-in (FR-10, AD-1). [À calibrer au live]
+ * The video interpolates the empty room (first frame) → furnished photo (last
+ * frame), so the prompt steers HOW the furniture arrives: directional motion
+ * from the ceiling and side walls, never a morph/fade/pop-in (FR-10, AD-1).
+ *
+ * Calibrated live 2026-07-12: benched 3 variants (2 rolls each) on a real
+ * kitchen; variant "A" (ceiling + sides descent) read best — the others are
+ * kept below as documented alternatives. Paired with REVEAL_NEGATIVE_PROMPT to
+ * push against the "feverish dream" morph the bare FLF interpolation produces.
  */
 export const REVEAL_MOTION_PROMPT =
-  "the furniture gently floats in and settles into its final place from the sides and the ceiling, smooth cinematic reveal, natural fluid motion, no fading, no sudden appearance";
+  "the furniture pieces descend from the ceiling and slide in from the side walls, flying into the room and landing precisely into their final positions; clear directional motion with real trajectories, solid objects physically moving into place, cinematic reveal; no morphing, no materializing on the spot";
+
+/**
+ * Negative prompt for the FLF video — discourages the in-place morph/dissolve
+ * that pure empty→furnished interpolation tends toward (kling default is only
+ * "blur, distort, and low quality").
+ */
+export const REVEAL_NEGATIVE_PROMPT =
+  "morphing, dissolving, materializing, fading in, cross-dissolve, blur, distort, low quality, warping";
+
+/**
+ * Benched motion-prompt alternatives (kept so the calibration work isn't lost).
+ * Swap one into REVEAL_MOTION_PROMPT to re-test. See resultat/ for the samples.
+ * - B (assembly/drop): "furniture flies in and assembles the kitchen: cabinets
+ *   drop down from above, appliances and units slide in from the left and right
+ *   edges of the frame and lock into position, like a physical assembly
+ *   animation with motion; solid moving objects, not dissolving in place"
+ * - C (gravity swoop): "an empty room fills with furniture that swoops in from
+ *   the top and the sides of the frame and settles into place with gravity and
+ *   momentum, smooth camera hold, furniture arriving in motion from off-screen;
+ *   never fading or morphing in place"
+ */

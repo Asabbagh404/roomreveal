@@ -5,7 +5,7 @@ import {
   TIMEOUTS_MS,
 } from "./config";
 import { fal } from "./client";
-import { REVEAL_MOTION_PROMPT } from "./prompts";
+import { REVEAL_MOTION_PROMPT, REVEAL_NEGATIVE_PROMPT } from "./prompts";
 import type { AdapterOptions, VideoResult } from "./types";
 
 /**
@@ -50,6 +50,8 @@ export async function video(
         start_image_url: emptyRoomUrl,
         end_image_url: photoUrl,
         prompt: REVEAL_MOTION_PROMPT,
+        // @ts-expect-error negative_prompt is a valid kling o1 API field (verified live) that the @fal-ai/client generated input type lags.
+        negative_prompt: REVEAL_NEGATIVE_PROMPT,
         duration: "5",
       },
       abortSignal: controller.signal,
