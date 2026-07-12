@@ -68,10 +68,10 @@ development_status:
   3-2-comparaison-cote-a-cote-photo-originale-piece-vide: done
   3-3-regeneration-de-la-piece-vide: done
   epic-3-retrospective: optional
-  epic-4: in-progress
+  epic-4: done
   4-1-generation-de-la-revelation-generation-flf: done
   4-2-lecteur-previsualisation-de-la-revelation: done
   4-3-telechargement-du-mp4: done
   4-4-nouvelle-generation-cloture-du-cycle-de-vie: done
-  4-5-cout-unitaire-documente-deploiement-de-l-instance-demo: ready-for-dev
+  4-5-cout-unitaire-documente-deploiement-de-l-instance-demo: done
   epic-4-retrospective: optional

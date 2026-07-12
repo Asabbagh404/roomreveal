@@ -1,6 +1,10 @@
+---
+baseline_commit: f9287b8
+---
+
 # Story 4.5: Coût unitaire documenté & déploiement de l'instance démo
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -15,16 +19,16 @@ so that je puisse présenter RoomReveal en séance et justifier son économie.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1 : Réécrire `README.md` — projet RoomReveal (remplace le boilerplate create-next-app) (AC: 1, 2)
-  - [ ] **Overview** : ce qu'est RoomReveal (photo meublée → déclutter → Révélation FLF), stack (Next.js 16 App Router, React 19, Tailwind 4, shadcn dark-only, fal.ai), le Parcours Upload → Masque → Pièce vide → Vidéo.
-  - [ ] **Getting started (dev)** : prérequis (Node, `npm install`), copier `.env.local.example` → `.env.local`, remplir `FAL_KEY` (server-only, AD-4), `npm run dev` → http://localhost:3000. Mentionner `NEXT_PUBLIC_DETECT_BACKEND` (`fal` défaut | `local` → voir `local-detect/README.md`).
-  - [ ] **Coût unitaire par Génération (AR-README-COGS)** : tableau des coûts par appel des **modèles réellement câblés** — détection (`fal-ai/sam-3` OU backend local GPU = 0 $), inpaint `fal-ai/bria/eraser` = **0,04 $/gen** (vérifié fal 2026-07-12), vidéo `fal-ai/kling-video/o1/image-to-video` = **0,56 $/5 s** (dominant), upload/storage ≈ 0 $. **Total ≈ 0,60 $/Génération** (backend détection local) — dans la cible NFR-2 (0,30–1,25 $) ; **+0,04 $ par régénération d'Inpainting** (nouvel appel bria eraser). Noter la divergence vs COGS spine (0,62 $, calculé sur flux-pro/v1/fill) : l'inpaint a été basculé sur bria eraser (voir Change Log 3.1) et la détection peut tourner en local (gratuit).
-  - [ ] **Temps de bout en bout (NFR-1/SM-4)** : mesuré cette session (temps machine, hors édition manuelle du Masque) — détection ~10-15 s (local GPU) · inpaint ~8 s · **vidéo kling ~2-3 min (dominant)** · uploads qq s → **≈ 3 min, < 4 min** ✓. Préciser que le temps utilisateur d'édition du Masque est variable et non compté.
-  - [ ] **Déploiement (AR-DEPLOY / AR-PROXY)** : deux environnements du **même artefact**, ne différant que par `FAL_KEY` — (a) **dev** : `next dev` ; (b) **démo auto-hébergée** : `npm run build` puis `next start` (ou Docker), **sur réseau privé** (le proxy `/api/fal/proxy` n'a ni auth ni rate-limit par design AD-4 → l'instance NE DOIT PAS être exposée publiquement, sinon fuite de dépense `FAL_KEY`). `FAL_KEY` en variable d'environnement serveur (jamais commitée).
-  - [ ] **Qualité avant push (AR-TESTS)** : pas de CI en v1 → exécuter **localement** `npm run lint`, `npx tsc --noEmit`, `npm test` (Vitest) avant chaque push. Les vérifs live (FAL_KEY) sont manuelles.
-- [ ] Task 2 : Vérification (AC: 1, 2)
-  - [ ] `README.md` contient : coût unitaire (tableau + total dans la cible), temps < 4 min, les 2 environnements (dev/démo, réseau privé, diffèrent par FAL_KEY), la note « pas de CI, lint/typecheck/vitest local avant push ».
-  - [ ] Cohérence : `npm run build` + `next start` documentés fonctionnent (build déjà vert) ; `.env.local.example` référencé existe. `npm test`/`tsc`/`lint` verts (aucune régression — 4.5 ne touche pas le code applicatif).
+- [x] Task 1 : Réécrire `README.md` — projet RoomReveal (remplace le boilerplate create-next-app) (AC: 1, 2)
+  - [x] **Overview** : ce qu'est RoomReveal (photo meublée → déclutter → Révélation FLF), stack (Next.js 16 App Router, React 19, Tailwind 4, shadcn dark-only, fal.ai), le Parcours Upload → Masque → Pièce vide → Vidéo.
+  - [x] **Getting started (dev)** : prérequis (Node, `npm install`), copier `.env.local.example` → `.env.local`, remplir `FAL_KEY` (server-only, AD-4), `npm run dev` → http://localhost:3000. Mentionner `NEXT_PUBLIC_DETECT_BACKEND` (`fal` défaut | `local` → voir `local-detect/README.md`).
+  - [x] **Coût unitaire par Génération (AR-README-COGS)** : tableau des coûts par appel des **modèles réellement câblés** — détection (`fal-ai/sam-3` OU backend local GPU = 0 $), inpaint `fal-ai/bria/eraser` = **0,04 $/gen** (vérifié fal 2026-07-12), vidéo `fal-ai/kling-video/o1/image-to-video` = **0,56 $/5 s** (dominant), upload/storage ≈ 0 $. **Total ≈ 0,60 $/Génération** (backend détection local) — dans la cible NFR-2 (0,30–1,25 $) ; **+0,04 $ par régénération d'Inpainting** (nouvel appel bria eraser). Noter la divergence vs COGS spine (0,62 $, calculé sur flux-pro/v1/fill) : l'inpaint a été basculé sur bria eraser (voir Change Log 3.1) et la détection peut tourner en local (gratuit).
+  - [x] **Temps de bout en bout (NFR-1/SM-4)** : mesuré cette session (temps machine, hors édition manuelle du Masque) — détection ~10-15 s (local GPU) · inpaint ~8 s · **vidéo kling ~2-3 min (dominant)** · uploads qq s → **≈ 3 min, < 4 min** ✓. Préciser que le temps utilisateur d'édition du Masque est variable et non compté.
+  - [x] **Déploiement (AR-DEPLOY / AR-PROXY)** : deux environnements du **même artefact**, ne différant que par `FAL_KEY` — (a) **dev** : `next dev` ; (b) **démo auto-hébergée** : `npm run build` puis `next start` (ou Docker), **sur réseau privé** (le proxy `/api/fal/proxy` n'a ni auth ni rate-limit par design AD-4 → l'instance NE DOIT PAS être exposée publiquement, sinon fuite de dépense `FAL_KEY`). `FAL_KEY` en variable d'environnement serveur (jamais commitée).
+  - [x] **Qualité avant push (AR-TESTS)** : pas de CI en v1 → exécuter **localement** `npm run lint`, `npx tsc --noEmit`, `npm test` (Vitest) avant chaque push. Les vérifs live (FAL_KEY) sont manuelles.
+- [x] Task 2 : Vérification (AC: 1, 2)
+  - [x] `README.md` contient : coût unitaire (tableau + total dans la cible), temps < 4 min, les 2 environnements (dev/démo, réseau privé, diffèrent par FAL_KEY), la note « pas de CI, lint/typecheck/vitest local avant push ».
+  - [x] Cohérence : `npm run build` + `next start` documentés fonctionnent (build déjà vert) ; `.env.local.example` référencé existe. `npm test`/`tsc`/`lint` verts (aucune régression — 4.5 ne touche pas le code applicatif).
 
 ## Dev Notes
 
@@ -79,8 +83,15 @@ claude-opus-4-8[1m] (Claude Opus 4.8, 1M context)
 
 ### Completion Notes List
 
+- **`README.md` réécrit** (remplace le boilerplate create-next-app) : overview RoomReveal + parcours, stack, démarrage dev (+`.env.local.example`, `FAL_KEY` server-only, `NEXT_PUBLIC_DETECT_BACKEND`), tableau des **modèles câblés** (sam-3/local, bria eraser, kling o1), **coût unitaire** (bria 0,04 $ + kling 0,56 $ + détection local 0 $ → **≈ 0,60 $/Génération**, +0,04 $/régé ; cible 0,30–1,25 $), **temps ≈ 3 min < 4 min**, **déploiement** (dev `next dev` / démo `next build`+`next start` **réseau privé**, ne diffèrent que par `FAL_KEY`, avertissement proxy sans auth), **pas de CI** (lint/tsc/vitest/build locaux avant push).
+- Documentation pure — **aucun code applicatif touché** ; 145 tests, tsc/lint/build restent verts. Refs vérifiées (`.env.local.example`, `local-detect/README.md`, script `start`).
+- Coûts vérifiés : bria eraser 0,04 $/gen (fal 2026-07-12) ; kling o1 0,56 $/5 s (spine). Temps mesurés sur les runs live de cette session.
+
 ### File List
+
+- `README.md` (réécrit)
 
 ## Change Log
 
 - 2026-07-12 : Story 4.5 créée (create-story) — coût unitaire + temps documentés dans README, deux environnements (dev/démo réseau privé, FAL_KEY), note pas-de-CI. Documentation pure. Statut → ready-for-dev.
+- 2026-07-12 : Story 4.5 implémentée — `README.md` réécrit (coût ≈0,60 $/Génération dans la cible, temps <4 min, déploiement dev/démo réseau privé, pas de CI). Auto-vérifiée contre AC1/AC2 (docs). 145 tests, tsc/lint/build verts. Statut → **done**. Clôt l'Epic 4.
