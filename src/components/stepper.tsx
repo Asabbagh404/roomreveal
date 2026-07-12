@@ -66,6 +66,12 @@ export function Stepper() {
         {STEP_ORDER.map((step, index) => {
           const isCurrent = index === currentIndex;
           const isBehind = index < currentIndex;
+          // Terminal completion: the Vidéo step is both current (gold) AND ticked
+          // once the Révélation exists — the "4/4 coché" celebration (UX-DR15,
+          // Story 4.2). Scoped to video+reveal so a current mask/emptyRoom step
+          // isn't wrongly ticked.
+          const isDone =
+            isCurrent && step === "video" && state.reveal !== undefined;
           // Ahead + artifact still present → revisiting it re-advances (guarded).
           const isReopenable = index > currentIndex && isReachableAhead(state, step);
           const isInert = !isCurrent && !isBehind && !isReopenable;
@@ -104,7 +110,11 @@ export function Stepper() {
                     !isCurrent && "border-current",
                   )}
                 >
-                  {isBehind ? <Check className="size-3" aria-hidden /> : index + 1}
+                  {isBehind || isDone ? (
+                    <Check className="size-3" aria-hidden />
+                  ) : (
+                    index + 1
+                  )}
                 </span>
                 <span>{STEP_LABELS[step]}</span>
               </button>

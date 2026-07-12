@@ -79,6 +79,36 @@ describe("Stepper re-advance confirmation (AC3)", () => {
   });
 });
 
+describe("Stepper terminal completion — 4/4 coché (Story 4.2)", () => {
+  const atVideo = (reveal?: string): Generation => ({
+    step: "video",
+    epoch: 2,
+    mask: "fal://mask",
+    emptyRoom: "fal://empty",
+    ...(reveal ? { reveal } : {}),
+  });
+
+  it("ticks the Vidéo step (current AND checked) once the Révélation is ready", () => {
+    render(
+      <GenerationProvider initialState={atVideo("fal://reveal")}>
+        <Stepper />
+      </GenerationProvider>,
+    );
+    const video = screen.getByText("Vidéo").closest("button");
+    expect(video?.getAttribute("aria-current")).toBe("step"); // still current (gold)
+    expect(video?.textContent).not.toContain("4"); // number replaced by the check
+  });
+
+  it("shows the number (not a check) on the Vidéo step while still generating", () => {
+    render(
+      <GenerationProvider initialState={atVideo()}>
+        <Stepper />
+      </GenerationProvider>,
+    );
+    expect(screen.getByText("Vidéo").closest("button")?.textContent).toContain("4");
+  });
+});
+
 describe("stepper reachability helpers (pure)", () => {
   const withArtifacts: Generation = {
     step: "mask",
