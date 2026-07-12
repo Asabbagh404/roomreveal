@@ -45,6 +45,7 @@
 generated: 2026-07-10
 last_updated: 2026-07-12
 project: flux_test
+# Epic 4 stories (4.1-4.5) registered 2026-07-12 via sprint-planning.
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
@@ -67,5 +68,10 @@ development_status:
   3-2-comparaison-cote-a-cote-photo-originale-piece-vide: done
   3-3-regeneration-de-la-piece-vide: done
   epic-3-retrospective: optional
-  epic-4: backlog
+  epic-4: in-progress
+  4-1-generation-de-la-revelation-generation-flf: done
+  4-2-lecteur-previsualisation-de-la-revelation: backlog
+  4-3-telechargement-du-mp4: backlog
+  4-4-nouvelle-generation-cloture-du-cycle-de-vie: backlog
+  4-5-cout-unitaire-documente-deploiement-de-l-instance-demo: backlog
   epic-4-retrospective: optional

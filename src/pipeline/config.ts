@@ -61,13 +61,13 @@ export const LOCAL_DETECT_TIMEOUT_MS = 180_000;
  * by the proxy. Glob syntax (picomatch). Storage/queue endpoints are covered by
  * the proxy's default allowed URL patterns (a separate, URL-pattern gate).
  *
- * Only the models actually wired in the current epic are listed, to keep the
- * public proxy's reachable model surface minimal — `video` (Epic 4) is added to
- * this allowlist when its adapter ships.
+ * All three pipeline models are now wired (detect + inpaint + video).
  */
 export const FAL_ALLOWED_ENDPOINTS: readonly string[] = [
   `${MODELS.detect}/**`,
   `${MODELS.detect}`,
   `${MODELS.inpaint}/**`,
   `${MODELS.inpaint}`,
+  `${MODELS.video}/**`,
+  `${MODELS.video}`,
 ];

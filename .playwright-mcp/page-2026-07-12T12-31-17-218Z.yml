@@ -1,0 +1,35 @@
+- generic [active] [ref=f4e1]:
+  - generic [ref=f4e2]:
+    - banner [ref=f4e3]:
+      - navigation "Parcours" [ref=f4e5]:
+        - list [ref=f4e6]:
+          - listitem [ref=f4e7]:
+            - button "Upload" [ref=f4e50] [cursor=pointer]
+          - listitem [ref=f4e12]:
+            - button "Masque" [ref=f4e82] [cursor=pointer]
+          - listitem [ref=f4e17]:
+            - button "3 Pièce vide" [ref=f4e18]:
+              - generic [ref=f4e19]: "3"
+              - generic [ref=f4e20]: Pièce vide
+          - listitem [ref=f4e22]:
+            - button "4 Vidéo" [disabled] [ref=f4e23]:
+              - generic [ref=f4e24]: "4"
+              - generic [ref=f4e25]: Vidéo
+        - paragraph [ref=f4e26]: "Étape 3 sur 4 : Pièce vide"
+    - main [ref=f4e27]:
+      - generic [ref=f4e85]:
+        - generic [ref=f4e86]:
+          - button [ref=f4e87] [cursor=pointer]:
+            - figure "Photo originale" [ref=f4e88]
+          - button [ref=f4e91] [cursor=pointer]:
+            - figure "Pièce vide" [ref=f4e92]
+        - generic [ref=f4e95]:
+          - button "Créer ma vidéo 1 à 3 minutes de génération" [ref=f4e96]:
+            - generic [ref=f4e97]: Créer ma vidéo
+            - generic [ref=f4e98]: 1 à 3 minutes de génération
+          - button "Régénérer" [ref=f4e99]
+          - paragraph [ref=f4e100]: "Un doute ? Régénérez : chaque Pièce vide est unique."
+    - contentinfo [ref=f4e39]:
+      - paragraph [ref=f4e40]: Vos photos sont supprimées automatiquement après 24 heures.
+  - button "Open Next.js Dev Tools" [ref=f4e46] [cursor=pointer]
+  - alert [ref=f4e81]

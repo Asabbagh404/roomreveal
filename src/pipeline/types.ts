@@ -27,3 +27,13 @@ export interface DetectResult {
 export interface InpaintResult {
   emptyRoom: string;
 }
+
+/**
+ * Result of the video adapter (AD-5). `reveal` is the URL of the generated FLF
+ * MP4 on fal storage (first frame = empty room, last frame = canonical photo,
+ * AD-1). The adapter throws a retryable StepError rather than returning an empty
+ * result, so `reveal` is always a real URL.
+ */
+export interface VideoResult {
+  reveal: string;
+}

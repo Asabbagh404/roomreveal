@@ -1,4 +1,4 @@
-import { DETECT_BACKEND, detect, detectLocal, inpaint, uploadArtifact } from "@/pipeline";
+import { DETECT_BACKEND, detect, detectLocal, inpaint, uploadArtifact, video } from "@/pipeline";
 import { encodeMaskPng } from "@/lib/mask-encode";
 import { isBufferEmpty } from "@/lib/mask-buffer";
 import type { GenerationAction } from "./reducer";
@@ -114,6 +114,60 @@ export async function runInpaint(
     dispatch({
       type: "SET_ERROR",
       error: isStepError(err) ? err : makeStepError("inpaint", true),
+    });
+  }
+}
+
+/**
+ * Generates the Révélation (AD-12): runs the FLF video adapter on the empty room
+ * (first frame) + canonical photo (last frame) and stores the MP4 URL
+ * (VIDEO_SUCCEEDED). Both inputs are already fal URLs — emptyRoom is the inpaint
+ * output, and the photo's fal URL was memoized when inpaint uploaded it (Story
+ * 3.1); the lazy upload here is only a safety net. A result is dropped without
+ * dispatch once the run is dead (epoch moved on — e.g. a Pièce vide regeneration,
+ * Story 3.3 — or signal aborted). Failures become a retryable SET_ERROR (AD-8).
+ * AR-LAYERS: the pipeline call lives here, never in the component.
+ */
+export async function runVideo(
+  state: Generation,
+  dispatch: Dispatch,
+  { signal, isStale }: RunContext,
+): Promise<void> {
+  const photo = state.originalPhoto;
+  const emptyRoomUrl = state.emptyRoom;
+  if (photo === undefined || emptyRoomUrl === undefined) return;
+
+  const dead = () => signal.aborted || isStale();
+  const onPhase = (phase: WaitPhase) => {
+    if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase });
+  };
+
+  try {
+    // The canonical photo is normally already on fal (uploaded during inpaint);
+    // upload lazily as a safety net if not, and memoize it (PHOTO_UPLOADED).
+    let photoUrl = photo.falUrl;
+    if (photoUrl === undefined) {
+      if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase: "uploading" });
+      photoUrl = await uploadArtifact(photo.blob);
+      if (dead()) return;
+      dispatch({ type: "PHOTO_UPLOADED", falUrl: photoUrl });
+    }
+
+    // Seed a phase immediately so the WaitPanel (+ elapsed timer + "1 à 3
+    // minutes") appears at once, without the mute gap before fal's first queue
+    // callback — the video job is long (UX-DR11: no silent spinner). Monotonicity
+    // (AD-14) accepts the real queued/generating/finalizing that follow.
+    if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase: "queued" });
+
+    const result = await video(emptyRoomUrl, photoUrl, { signal, onPhase });
+    if (dead()) return; // superseded or cancelled — drop the result
+
+    dispatch({ type: "VIDEO_SUCCEEDED", revealUrl: result.reveal });
+  } catch (err) {
+    if (dead()) return; // a cancelled/superseded run must not paint an error
+    dispatch({
+      type: "SET_ERROR",
+      error: isStepError(err) ? err : makeStepError("video", true),
     });
   }
 }

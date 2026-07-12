@@ -1,0 +1,43 @@
+- generic [active] [ref=f4e1]:
+  - generic [ref=f4e2]:
+    - banner [ref=f4e3]:
+      - navigation "Parcours" [ref=f4e5]:
+        - list [ref=f4e6]:
+          - listitem [ref=f4e7]:
+            - button "Upload" [ref=f4e50] [cursor=pointer]
+          - listitem [ref=f4e12]:
+            - button "2 Masque" [ref=f4e13]:
+              - generic [ref=f4e14]: "2"
+              - generic [ref=f4e15]: Masque
+          - listitem [ref=f4e17]:
+            - button "3 Pièce vide" [disabled] [ref=f4e18]:
+              - generic [ref=f4e19]: "3"
+              - generic [ref=f4e20]: Pièce vide
+          - listitem [ref=f4e22]:
+            - button "4 Vidéo" [disabled] [ref=f4e23]:
+              - generic [ref=f4e24]: "4"
+              - generic [ref=f4e25]: Vidéo
+        - paragraph [ref=f4e26]: "Étape 2 sur 4 : Masque"
+    - main [ref=f4e27]:
+      - generic [ref=f4e53]:
+        - generic [ref=f4e55]:
+          - img "Votre photo" [ref=f4e56]
+          - generic "Masque" [ref=f4e57]
+        - generic [ref=f4e58]:
+          - group "Outil" [ref=f4e59]:
+            - button "Pinceau (B)" [pressed] [ref=f4e60]
+            - button "Gomme (E)" [ref=f4e65]
+          - generic [ref=f4e69]:
+            - generic [ref=f4e70]: Taille de l’outil
+            - generic "Taille de l’outil" [ref=f4e71]:
+              - slider [ref=f4e75]
+            - generic [ref=f4e76]: 32 px
+          - group "Historique" [ref=f4e77]:
+            - button "Annuler (Ctrl+Z)" [disabled]
+            - button "Rétablir (Ctrl+Maj+Z)" [disabled]
+        - generic [ref=f4e78]:
+          - button "Envoi du Masque…" [disabled]
+    - contentinfo [ref=f4e39]:
+      - paragraph [ref=f4e40]: Vos photos sont supprimées automatiquement après 24 heures.
+  - button "Open Next.js Dev Tools" [ref=f4e46] [cursor=pointer]
+  - alert [ref=f4e81]

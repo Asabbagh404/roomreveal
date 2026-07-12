@@ -83,5 +83,12 @@ export const FURNITURE_CATEGORIES: readonly string[] = [
 export const EMPTY_ROOM_PROMPT =
   "empty room, bare floor and walls, no furniture, consistent lighting and perspective, photorealistic interior";
 
-/** FLF motion prompt for the "mix côtés + plafond" preset — posed for Epic 4. */
-export const REVEAL_MOTION_PROMPT = "";
+/**
+ * FLF motion prompt (kling o1, Story 4.1) — the "mix côtés + plafond" preset.
+ * The video morphs the empty room (first frame) into the furnished photo (last
+ * frame), so it must describe furniture ARRIVING in motion — floating/settling
+ * into place from the sides and the ceiling — a smooth cinematic reveal, never
+ * a fade or an instant pop-in (FR-10, AD-1). [À calibrer au live]
+ */
+export const REVEAL_MOTION_PROMPT =
+  "the furniture gently floats in and settles into its final place from the sides and the ceiling, smooth cinematic reveal, natural fluid motion, no fading, no sudden appearance";

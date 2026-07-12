@@ -30,6 +30,7 @@ export type GenerationAction =
   | { type: "MASK_VALIDATED"; maskUrl: string }
   | { type: "INPAINT_SUCCEEDED"; emptyRoomUrl: string }
   | { type: "REGENERATE_EMPTY_ROOM" }
+  | { type: "VIDEO_SUCCEEDED"; revealUrl: string }
   | { type: "GO_TO_STEP"; step: Step }
   // `step` is the DESTINATION to advance to (not the source): sets step=step and
   // invalidates everything strictly downstream of it. Named "…_FROM" for the
@@ -166,6 +167,18 @@ export function generationReducer(
       return {
         ...state,
         emptyRoom: action.emptyRoomUrl,
+        waitPhase: undefined,
+        error: undefined,
+      };
+
+    case "VIDEO_SUCCEEDED":
+      // Store the generated Révélation (last step). Like INPAINT_SUCCEEDED, this
+      // is a PRODUCTION, not a transition: step stays "video" and the epoch does
+      // NOT bump (nothing downstream to invalidate). No `step` guard — back-nav
+      // unmounts the surface, whose effect aborts the run before dispatch (AD-12).
+      return {
+        ...state,
+        reveal: action.revealUrl,
         waitPhase: undefined,
         error: undefined,
       };

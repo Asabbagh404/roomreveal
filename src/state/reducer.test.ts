@@ -221,6 +221,27 @@ describe("generationReducer (pure, no mocks)", () => {
     expect(next.originalPhoto).toBe(state.originalPhoto);
   });
 
+  it("VIDEO_SUCCEEDED stores reveal without advancing the step or bumping epoch", () => {
+    const state: Generation = {
+      step: "video",
+      epoch: 6,
+      mask: "fal://mask",
+      emptyRoom: "fal://empty",
+      waitPhase: "generating",
+    };
+    const next = generationReducer(state, {
+      type: "VIDEO_SUCCEEDED",
+      revealUrl: "fal://reveal.mp4",
+    });
+    expect(next.reveal).toBe("fal://reveal.mp4");
+    expect(next.step).toBe("video"); // last step, stays
+    expect(next.epoch).toBe(6); // production, not an invalidation
+    expect(next.waitPhase).toBeUndefined();
+    expect(next.error).toBeUndefined();
+    expect(next.emptyRoom).toBe("fal://empty"); // upstream preserved
+    expect(next.mask).toBe("fal://mask");
+  });
+
   it("REGENERATE_EMPTY_ROOM clears emptyRoom + reveal, bumps epoch, preserves mask/photo, stays on emptyRoom", () => {
     const photo = {
       blob: new Blob(["p"]),

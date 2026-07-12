@@ -4,12 +4,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const detect = vi.fn();
 const detectLocal = vi.fn();
 const inpaint = vi.fn();
+const videoFn = vi.fn();
 const uploadArtifact = vi.fn();
 vi.mock("@/pipeline", () => ({
   DETECT_BACKEND: "fal", // these tests cover the default (fal) orchestration path
   detect: (...a: unknown[]) => detect(...a),
   detectLocal: (...a: unknown[]) => detectLocal(...a),
   inpaint: (...a: unknown[]) => inpaint(...a),
+  video: (...a: unknown[]) => videoFn(...a),
   uploadArtifact: (...a: unknown[]) => uploadArtifact(...a),
 }));
 
@@ -20,7 +22,7 @@ vi.mock("@/lib/mask-encode", () => ({
   encodeMaskPng: (...a: unknown[]) => encodeMaskPng(...a),
 }));
 
-import { runDetect, runInpaint, runValidateMask } from "./effects";
+import { runDetect, runInpaint, runValidateMask, runVideo } from "./effects";
 import type { Generation } from "./types";
 
 const paintedBuffer = { data: new Uint8Array([0, 255, 0, 0]), width: 2, height: 2 };
@@ -41,9 +43,28 @@ const signal = new AbortController().signal;
 afterEach(() => {
   detect.mockReset();
   inpaint.mockReset();
+  videoFn.mockReset();
   uploadArtifact.mockReset();
   encodeMaskPng.mockClear();
 });
+
+/** State sitting at the video step with an empty room + uploaded photo (post-4.1 entry). */
+function videoState(overrides: Partial<Generation> = {}): Generation {
+  return {
+    step: "video",
+    epoch: 3,
+    originalPhoto: {
+      blob: new Blob(["p"]),
+      falUrl: "https://fal/photo.jpg",
+      detectionBlob: new Blob(["d"]),
+      width: 1024,
+      height: 768,
+    },
+    mask: "https://fal/mask.png",
+    emptyRoom: "https://fal/empty.png",
+    ...overrides,
+  };
+}
 
 /** State sitting at the emptyRoom step with a validated mask (post-2.3). */
 function emptyRoomState(overrides: Partial<Generation> = {}): Generation {
@@ -382,5 +403,89 @@ describe("runInpaint (AD-12 orchestration)", () => {
       type: "SET_WAIT_PHASE",
       phase: "generating",
     });
+  });
+});
+
+describe("runVideo (AD-12 FLF orchestration)", () => {
+  it("calls video(emptyRoom, photo) and dispatches VIDEO_SUCCEEDED; no re-upload when photo already on fal", async () => {
+    videoFn.mockResolvedValue({ reveal: "https://fal/reveal.mp4" });
+    const dispatch = vi.fn();
+
+    await runVideo(videoState(), dispatch, { signal, isStale: notStale });
+
+    expect(uploadArtifact).not.toHaveBeenCalled(); // photo.falUrl already set
+    // Seeds a phase immediately so the WaitPanel shows without dead-air (UX-DR11).
+    expect(dispatch).toHaveBeenCalledWith({ type: "SET_WAIT_PHASE", phase: "queued" });
+    expect(videoFn).toHaveBeenCalledWith(
+      "https://fal/empty.png", // first frame = empty room
+      "https://fal/photo.jpg", // last frame = canonical photo
+      expect.anything(),
+    );
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "VIDEO_SUCCEEDED",
+      revealUrl: "https://fal/reveal.mp4",
+    });
+  });
+
+  it("uploads the canonical photo lazily when its fal URL is missing", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/photo.jpg");
+    videoFn.mockResolvedValue({ reveal: "https://fal/reveal.mp4" });
+    const dispatch = vi.fn();
+    const state = videoState({
+      originalPhoto: {
+        blob: new Blob(["p"]),
+        detectionBlob: new Blob(["d"]),
+        width: 1024,
+        height: 768,
+      },
+    });
+
+    await runVideo(state, dispatch, { signal, isStale: notStale });
+
+    expect(uploadArtifact).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenCalledWith({ type: "PHOTO_UPLOADED", falUrl: "https://fal/photo.jpg" });
+    expect(videoFn).toHaveBeenCalledWith("https://fal/empty.png", "https://fal/photo.jpg", expect.anything());
+  });
+
+  it("is a no-op when the empty room or the photo is missing", async () => {
+    videoFn.mockResolvedValue({ reveal: "u" });
+    const dispatch = vi.fn();
+
+    await runVideo(videoState({ emptyRoom: undefined }), dispatch, { signal, isStale: notStale });
+    await runVideo(videoState({ originalPhoto: undefined }), dispatch, { signal, isStale: notStale });
+
+    expect(videoFn).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("drops a result that goes stale mid-flight (epoch bumped, e.g. Pièce vide regenerated)", async () => {
+    let stale = false;
+    videoFn.mockImplementation(() => {
+      stale = true;
+      return Promise.resolve({ reveal: "https://fal/reveal.mp4" });
+    });
+    const dispatch = vi.fn();
+
+    await runVideo(videoState(), dispatch, { signal, isStale: () => stale });
+
+    expect(dispatch.mock.calls.some((c) => c[0].type === "VIDEO_SUCCEEDED")).toBe(false);
+  });
+
+  it("dispatches SET_ERROR with the adapter's video StepError on failure", async () => {
+    videoFn.mockRejectedValue({
+      step: "video",
+      retryable: true,
+      userMessage: "La vidéo n'a pas abouti.",
+    });
+    const dispatch = vi.fn();
+
+    await runVideo(videoState(), dispatch, { signal, isStale: notStale });
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "SET_ERROR",
+        error: expect.objectContaining({ step: "video" }),
+      }),
+    );
   });
 });
