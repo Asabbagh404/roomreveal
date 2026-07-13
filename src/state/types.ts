@@ -44,8 +44,14 @@ export const WAIT_PHASE_ORDER: readonly WaitPhase[] = [
 ] as const;
 
 /** Pipeline operation that can fail (AD-8) — distinct from the Parcours Step.
- * `edit` covers the free-edit retouch (remove/add) in edit mode (Story 5.3). */
-export type PipelineStep = "detect" | "inpaint" | "video" | "edit";
+ * `edit` covers the free-edit retouch (remove/add) in edit mode (Story 5.3);
+ * `pointSegment` covers click-to-select object segmentation (Story 5.6). */
+export type PipelineStep =
+  | "detect"
+  | "inpaint"
+  | "video"
+  | "edit"
+  | "pointSegment";
 
 /**
  * Single error taxonomy (AD-8). userMessage is French (glossary vocabulary);
@@ -66,6 +72,7 @@ export const PIPELINE_STEP_TO_PARCOURS: Record<PipelineStep, Step> = {
   inpaint: "emptyRoom",
   video: "video",
   edit: "editor",
+  pointSegment: "editor",
 };
 
 /**

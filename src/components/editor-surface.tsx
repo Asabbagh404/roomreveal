@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useGeneration } from "@/state/generation-context";
-import { runEdit } from "@/state/effects";
+import { runEdit, runPointSegment } from "@/state/effects";
 import { makeStepError } from "@/state/step-error";
-import { createBlankBuffer, isBufferEmpty } from "@/lib/mask-buffer";
+import { createBlankBuffer, isBufferEmpty, type Point } from "@/lib/mask-buffer";
 import { downloadFile } from "@/lib/download-file";
 import { MaskCanvas } from "@/components/mask-canvas";
 import { GenerationButton } from "@/components/generation-button";
@@ -45,6 +45,12 @@ export function EditorSurface() {
   const [applying, setApplying] = useState(false);
   const applyingRef = useRef(false);
   const runControllerRef = useRef<AbortController | null>(null);
+
+  // Click-to-select (Story 5.6): a click segments the object under it and unions
+  // its mask into the draft. Its own controller so it never clobbers an apply.
+  const [selecting, setSelecting] = useState(false);
+  const selectingRef = useRef(false);
+  const selectControllerRef = useRef<AbortController | null>(null);
 
   // Operation toggle (Story 5.4): « Enlever » (bria eraser) or « Ajouter » (flux
   // fill from a text prompt). The prompt is only used for « Ajouter ».
@@ -120,10 +126,37 @@ export function EditorSurface() {
     };
   }, [editBase?.url, editBase?.width, dispatch]);
 
-  // Abort a running edit if the surface unmounts (back-nav to Upload).
+  // Abort a running edit or segmentation if the surface unmounts (back-nav).
   useEffect(() => {
-    return () => runControllerRef.current?.abort();
+    return () => {
+      runControllerRef.current?.abort();
+      selectControllerRef.current?.abort();
+    };
   }, []);
+
+  // A select click: segment the object under the point and union it in (5.6).
+  const handlePointSelect = useCallback(
+    async (point: Point) => {
+      if (selectingRef.current) return; // one segmentation at a time
+      selectingRef.current = true;
+      setSelecting(true);
+      const controller = new AbortController();
+      selectControllerRef.current = controller;
+      const startEpoch = epochRef.current;
+      try {
+        await runPointSegment(state, dispatch, {
+          x: point.x,
+          y: point.y,
+          signal: controller.signal,
+          isStale: () => epochRef.current !== startEpoch,
+        });
+      } finally {
+        selectingRef.current = false;
+        setSelecting(false);
+      }
+    },
+    [state, dispatch],
+  );
 
   const hasZone = buffer !== undefined && !isBufferEmpty(buffer);
   // « Ajouter » also needs a non-empty description; « Enlever » only needs a zone.
@@ -208,6 +241,9 @@ export function EditorSurface() {
           epoch={state.epoch}
           onCommit={(next) => dispatch({ type: "SET_MASK_BUFFER", buffer: next })}
           backgroundAlt="Image de travail"
+          selectable
+          onPointSelect={handlePointSelect}
+          selecting={selecting}
         />
       ) : (
         <div className="w-full max-w-3xl overflow-hidden rounded-lg border border-bordure">
@@ -262,7 +298,7 @@ export function EditorSurface() {
         <p className="text-center text-sm text-texte-secondaire">
           {operation === "add"
             ? "Dessinez où placer l’objet, décrivez-le, puis appliquez."
-            : "Peignez la zone de l’objet à retirer, puis appliquez."}
+            : "Cliquez un objet pour le sélectionner (ou peignez la zone), puis appliquez."}
           {retouchCount > 0 ? ` · Retouche n° ${retouchCount}` : ""}
         </p>
       </div>

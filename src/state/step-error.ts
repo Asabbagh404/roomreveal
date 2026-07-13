@@ -15,6 +15,8 @@ const STEP_MESSAGES: Record<PipelineStep, string> = {
     "La vidéo n'a pas abouti. Votre Masque et votre Pièce vide sont conservés — relancez quand vous voulez.",
   edit:
     "La retouche n'a pas abouti. Votre image est conservée — réessayez quand vous voulez.",
+  pointSegment:
+    "La sélection de l'objet n'a pas abouti. Votre masque est conservé — cliquez à nouveau ou peignez la zone.",
 };
 
 export function makeStepError(
@@ -32,7 +34,8 @@ export function isStepError(err: unknown): err is StepError {
     (e.step === "detect" ||
       e.step === "inpaint" ||
       e.step === "video" ||
-      e.step === "edit") &&
+      e.step === "edit" ||
+      e.step === "pointSegment") &&
     typeof e.retryable === "boolean"
   );
 }

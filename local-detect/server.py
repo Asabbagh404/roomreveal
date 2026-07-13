@@ -120,6 +120,48 @@ def _segment_union(m: dict, image: Image.Image, boxes: torch.Tensor) -> np.ndarr
     return union
 
 
+def _segment_point(m: dict, image: Image.Image, x: int, y: int) -> np.ndarray:
+    """SAM at a single positive point -> best mask as a bool array [H, W].
+
+    The click-to-select counterpart of _segment_union (Story 5.6): no Grounding
+    DINO, just SAM point-prompting. Picks the highest-IoU of SAM's multimask
+    outputs for the point.
+    """
+    inputs = m["sam_processor"](
+        image,
+        input_points=[[[x, y]]],  # (batch, n_points, 2) -> one image, one point
+        input_labels=[[1]],  # 1 = foreground/include
+        return_tensors="pt",
+    ).to(DEVICE)
+    with torch.no_grad():
+        outputs = m["sam_model"](**inputs)
+    masks = m["sam_processor"].image_processor.post_process_masks(
+        outputs.pred_masks.cpu(),
+        inputs["original_sizes"].cpu(),
+        inputs["reshaped_input_sizes"].cpu(),
+    )[0]  # tensor [n_points, n_multimask, H, W]
+    scores = outputs.iou_scores.cpu()[0]  # [n_points, n_multimask]
+    best = int(torch.argmax(scores[0]))
+    return masks[0, best].numpy().astype(bool)
+
+
+@app.post("/point")
+async def point(image: UploadFile = File(...), point: str = Form(...)) -> Response:
+    """Segment the object under a clicked point (SAM point-prompt, Story 5.6)."""
+    m = _ensure_models()
+    coord = json.loads(point)
+    pil = Image.open(io.BytesIO(await image.read())).convert("RGB")
+
+    mask = _segment_point(m, pil, int(coord["x"]), int(coord["y"]))
+    if not mask.any():
+        return Response(status_code=204)  # nothing at that point
+
+    mask_img = Image.fromarray((mask * 255).astype(np.uint8), mode="L")
+    buf = io.BytesIO()
+    mask_img.save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png")
+
+
 @app.post("/detect")
 async def detect(image: UploadFile = File(...), prompts: str = Form(...)) -> Response:
     m = _ensure_models()

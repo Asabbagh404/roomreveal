@@ -47,3 +47,14 @@ export interface VideoResult {
 export interface EditResult {
   image: string;
 }
+
+/**
+ * Result of the point-segment adapter (Story 5.6). `mask` is the URL (fal) or
+ * data URL (local) of a single binary PNG mask — white = the object under the
+ * clicked point — at (or reducible to) canonical dimensions. The adapter throws
+ * a retryable StepError rather than returning an empty result, so `mask` is
+ * always a real URL. The effect layer decodes it and unions it into the draft.
+ */
+export interface PointSegmentResult {
+  mask: string;
+}

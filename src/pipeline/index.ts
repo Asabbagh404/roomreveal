@@ -8,6 +8,8 @@ export { detectLocal } from "./detect-local";
 export { inpaint } from "./inpaint";
 export { autoEmptyRoom } from "./empty-room-auto";
 export { editRemove, editAdd } from "./edit";
+export { pointSegment } from "./point-segment";
+export { pointSegmentLocal } from "./point-segment-local";
 export { video } from "./video";
 export { DETECT_BACKEND } from "./config";
 export type {
@@ -15,5 +17,6 @@ export type {
   DetectResult,
   EditResult,
   InpaintResult,
+  PointSegmentResult,
   VideoResult,
 } from "./types";

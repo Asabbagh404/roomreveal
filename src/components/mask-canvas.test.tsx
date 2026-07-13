@@ -74,3 +74,73 @@ describe("MaskCanvas (Story 5.2 — controlled reusable canvas)", () => {
     expect(onCommit).not.toHaveBeenCalled();
   });
 });
+
+describe("MaskCanvas click-to-select (Story 5.6)", () => {
+  /** Give the viewport a real box so screenToBuffer yields finite coords. */
+  function withRect(el: HTMLElement) {
+    el.getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 1024, height: 768, right: 1024, bottom: 768, x: 0, y: 0, toJSON() {} }) as DOMRect;
+  }
+
+  it("does not show the Sélection tool unless selectable", () => {
+    renderCanvas();
+    expect(screen.queryByRole("button", { name: /Sélection/ })).toBeNull();
+  });
+
+  it("shows the Sélection tool when selectable", () => {
+    renderCanvas({ selectable: true });
+    expect(screen.getByRole("button", { name: /Sélection au clic/ })).toBeDefined();
+  });
+
+  it("in select mode a click emits onPointSelect (buffer point) and commits no stroke", () => {
+    const onCommit = vi.fn();
+    const onPointSelect = vi.fn();
+    render(
+      <MaskCanvas
+        backgroundUrl="blob:bg"
+        width={1024}
+        height={768}
+        buffer={createBlankBuffer(1024, 768)}
+        epoch={0}
+        onCommit={onCommit}
+        selectable
+        onPointSelect={onPointSelect}
+      />,
+    );
+    // Activate the select tool.
+    fireEvent.click(screen.getByRole("button", { name: /Sélection au clic/ }));
+    const overlay = screen.getByLabelText("Masque");
+    const viewport = overlay.parentElement!.parentElement!;
+    withRect(viewport);
+    fireEvent.pointerDown(viewport, { clientX: 512, clientY: 384, pointerId: 1 });
+    fireEvent.pointerUp(viewport, { clientX: 512, clientY: 384, pointerId: 1 });
+    expect(onPointSelect).toHaveBeenCalledOnce();
+    const p = onPointSelect.mock.calls[0][0];
+    expect(p.x).toBeCloseTo(512);
+    expect(p.y).toBeCloseTo(384);
+    expect(onCommit).not.toHaveBeenCalled(); // select never paints
+  });
+
+  it("ignores a second click while a segmentation is in flight (selecting)", () => {
+    const onPointSelect = vi.fn();
+    render(
+      <MaskCanvas
+        backgroundUrl="blob:bg"
+        width={1024}
+        height={768}
+        buffer={createBlankBuffer(1024, 768)}
+        epoch={0}
+        onCommit={vi.fn()}
+        selectable
+        onPointSelect={onPointSelect}
+        selecting
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Sélection au clic/ }));
+    const overlay = screen.getByLabelText("Masque");
+    const viewport = overlay.parentElement!.parentElement!;
+    withRect(viewport);
+    fireEvent.pointerDown(viewport, { clientX: 512, clientY: 384, pointerId: 1 });
+    expect(onPointSelect).not.toHaveBeenCalled();
+  });
+});

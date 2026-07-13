@@ -7,6 +7,8 @@ const inpaint = vi.fn();
 const autoEmptyRoom = vi.fn();
 const editRemove = vi.fn();
 const editAdd = vi.fn();
+const pointSegment = vi.fn();
+const pointSegmentLocal = vi.fn();
 const videoFn = vi.fn();
 const uploadArtifact = vi.fn();
 vi.mock("@/pipeline", () => ({
@@ -17,6 +19,8 @@ vi.mock("@/pipeline", () => ({
   autoEmptyRoom: (...a: unknown[]) => autoEmptyRoom(...a),
   editRemove: (...a: unknown[]) => editRemove(...a),
   editAdd: (...a: unknown[]) => editAdd(...a),
+  pointSegment: (...a: unknown[]) => pointSegment(...a),
+  pointSegmentLocal: (...a: unknown[]) => pointSegmentLocal(...a),
   video: (...a: unknown[]) => videoFn(...a),
   uploadArtifact: (...a: unknown[]) => uploadArtifact(...a),
 }));
@@ -28,7 +32,14 @@ vi.mock("@/lib/mask-encode", () => ({
   encodeMaskPng: (...a: unknown[]) => encodeMaskPng(...a),
 }));
 
-import { runAutoEmptyRoom, runDetect, runEdit, runInpaint, runValidateMask, runVideo } from "./effects";
+// decodeMaskToBuffer reads a canvas (unsupported in jsdom) — mock at its
+// boundary; the real decode is covered by live-verify (Story 5.6).
+const decodeMaskToBuffer = vi.fn();
+vi.mock("@/lib/mask-decode", () => ({
+  decodeMaskToBuffer: (...a: unknown[]) => decodeMaskToBuffer(...a),
+}));
+
+import { runAutoEmptyRoom, runDetect, runEdit, runInpaint, runPointSegment, runValidateMask, runVideo } from "./effects";
 import type { Generation } from "./types";
 
 const paintedBuffer = { data: new Uint8Array([0, 255, 0, 0]), width: 2, height: 2 };
@@ -52,9 +63,12 @@ afterEach(() => {
   autoEmptyRoom.mockReset();
   editRemove.mockReset();
   editAdd.mockReset();
+  pointSegment.mockReset();
+  pointSegmentLocal.mockReset();
   videoFn.mockReset();
   uploadArtifact.mockReset();
   encodeMaskPng.mockClear();
+  decodeMaskToBuffer.mockReset();
 });
 
 /** State sitting at the video step with an empty room + uploaded photo (post-4.1 entry). */
@@ -817,5 +831,107 @@ describe("runEdit — add operation (Story 5.4, flux fill)", () => {
 
     expect(editRemove).toHaveBeenCalledOnce();
     expect(editAdd).not.toHaveBeenCalled();
+  });
+});
+
+describe("runPointSegment (AD-12 click-to-select, Story 5.6)", () => {
+  const buffer = { data: new Uint8Array(16), width: 4, height: 4 };
+  const decoded = { data: new Uint8Array(16).fill(255), width: 4, height: 4 };
+
+  /** Editor state on a work image with dims + a (blank) draft buffer. */
+  function segState(overrides: Partial<Generation> = {}): Generation {
+    return {
+      step: "editor",
+      epoch: 1,
+      mode: "edit",
+      editBase: { url: "https://fal/work.png", width: 4, height: 4 },
+      maskDraft: { detectedMaskUrl: null, buffer },
+      ...overrides,
+    };
+  }
+
+  it("segments the point, decodes + unions the mask, and dispatches SET_MASK_BUFFER", async () => {
+    pointSegment.mockResolvedValue({ mask: "https://fal/objmask.png" });
+    decodeMaskToBuffer.mockResolvedValue(decoded);
+    const dispatch = vi.fn();
+
+    await runPointSegment(segState(), dispatch, { x: 2, y: 3, signal, isStale: notStale });
+
+    expect(pointSegment).toHaveBeenCalledWith(
+      "https://fal/work.png",
+      { x: 2, y: 3 },
+      expect.anything(),
+    );
+    expect(decodeMaskToBuffer).toHaveBeenCalledWith("https://fal/objmask.png", 4, 4);
+    const call = dispatch.mock.calls.find((c) => c[0].type === "SET_MASK_BUFFER");
+    expect(call).toBeDefined();
+    // Union of a blank draft with an all-255 decode → all-255.
+    expect([...call![0].buffer.data].every((v: number) => v === 255)).toBe(true);
+  });
+
+  it("does NOT touch waitPhase (no full-screen WaitPanel — inline pulse instead)", async () => {
+    pointSegment.mockResolvedValue({ mask: "https://fal/objmask.png" });
+    decodeMaskToBuffer.mockResolvedValue(decoded);
+    const dispatch = vi.fn();
+
+    await runPointSegment(segState(), dispatch, { x: 1, y: 1, signal, isStale: notStale });
+
+    expect(dispatch.mock.calls.some((c) => c[0].type === "SET_WAIT_PHASE")).toBe(false);
+  });
+
+  it("lazily uploads the work image on the first click (blob → EDIT_BASE_UPLOADED)", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/uploaded.png");
+    pointSegment.mockResolvedValue({ mask: "https://fal/objmask.png" });
+    decodeMaskToBuffer.mockResolvedValue(decoded);
+    const dispatch = vi.fn();
+
+    const state = segState({ editBase: { blob: new Blob(["w"]), width: 4, height: 4 } });
+    await runPointSegment(state, dispatch, { x: 1, y: 1, signal, isStale: notStale });
+
+    expect(uploadArtifact).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenCalledWith({ type: "EDIT_BASE_UPLOADED", url: "https://fal/uploaded.png" });
+    expect(pointSegment).toHaveBeenCalledWith("https://fal/uploaded.png", { x: 1, y: 1 }, expect.anything());
+  });
+
+  it("is a no-op when editBase is missing or dims are not yet measured", async () => {
+    const dispatch = vi.fn();
+    await runPointSegment(segState({ editBase: undefined }), dispatch, { x: 1, y: 1, signal, isStale: notStale });
+    await runPointSegment(
+      segState({ editBase: { url: "https://fal/work.png" } }),
+      dispatch,
+      { x: 1, y: 1, signal, isStale: notStale },
+    );
+    expect(pointSegment).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("drops the result without dispatch when the run is stale (superseded)", async () => {
+    pointSegment.mockResolvedValue({ mask: "https://fal/objmask.png" });
+    decodeMaskToBuffer.mockResolvedValue(decoded);
+    const dispatch = vi.fn();
+    let stale = false;
+
+    const p = runPointSegment(segState(), dispatch, {
+      x: 1,
+      y: 1,
+      signal,
+      isStale: () => stale,
+    });
+    stale = true;
+    await p;
+
+    expect(dispatch.mock.calls.some((c) => c[0].type === "SET_MASK_BUFFER")).toBe(false);
+  });
+
+  it("maps a failure to a retryable SET_ERROR of step pointSegment", async () => {
+    pointSegment.mockRejectedValue(new Error("boom"));
+    const dispatch = vi.fn();
+
+    await runPointSegment(segState(), dispatch, { x: 1, y: 1, signal, isStale: notStale });
+
+    const err = dispatch.mock.calls.find((c) => c[0].type === "SET_ERROR");
+    expect(err).toBeDefined();
+    expect(err![0].error.step).toBe("pointSegment");
+    expect(err![0].error.retryable).toBe(true);
   });
 });

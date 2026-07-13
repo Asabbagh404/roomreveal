@@ -1,18 +1,20 @@
 "use client";
 
-import { Brush, Eraser, Redo2, Undo2 } from "lucide-react";
+import { Brush, Eraser, MousePointerClick, Redo2, Undo2 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { MAX_BRUSH, MIN_BRUSH } from "@/lib/mask-tools";
-import type { StrokeMode } from "@/lib/mask-buffer";
+import type { MaskTool } from "@/lib/mask-buffer";
 import { cn } from "@/lib/utils";
 
 interface MaskToolbarProps {
-  tool: StrokeMode;
+  tool: MaskTool;
   size: number;
+  /** Shows the click-to-select tool (Story 5.6, edit mode only). */
+  selectable?: boolean;
   canUndo: boolean;
   canRedo: boolean;
-  onToolChange: (tool: StrokeMode) => void;
+  onToolChange: (tool: MaskTool) => void;
   onSizeChange: (size: number) => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -28,6 +30,7 @@ interface MaskToolbarProps {
 export function MaskToolbar({
   tool,
   size,
+  selectable = false,
   canUndo,
   canRedo,
   onToolChange,
@@ -38,6 +41,15 @@ export function MaskToolbar({
   return (
     <div className="flex w-full max-w-md items-center gap-4 rounded-lg border border-bordure bg-surface-elevee px-4 py-3">
       <div className="flex gap-1" role="group" aria-label="Outil">
+        {selectable && (
+          <ToolButton
+            active={tool === "select"}
+            label="Sélection au clic (S)"
+            onClick={() => onToolChange("select")}
+          >
+            <MousePointerClick className="size-4" aria-hidden />
+          </ToolButton>
+        )}
         <ToolButton
           active={tool === "brush"}
           label="Pinceau (B)"

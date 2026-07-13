@@ -3,6 +3,7 @@ import {
   createBlankBuffer,
   isBufferEmpty,
   paintStroke,
+  unionBuffers,
   type MaskBuffer,
 } from "./mask-buffer";
 
@@ -88,5 +89,44 @@ describe("mask-buffer (pure, AD-7 binary)", () => {
     const painted = paintStroke(buf, [], 8, "brush");
     expect(painted).not.toBe(buf);
     expect(isBufferEmpty(painted)).toBe(true);
+  });
+});
+
+describe("unionBuffers (Story 5.6 click-to-select)", () => {
+  it("takes the per-pixel max so painted pixels accumulate", () => {
+    const a = createBlankBuffer(4, 4);
+    a.data[0] = 255; // top-left set in a
+    const b = createBlankBuffer(4, 4);
+    b.data[5] = 255; // a different pixel set in b
+    const u = unionBuffers(a, b);
+    expect(u.data[0]).toBe(255); // from a
+    expect(u.data[5]).toBe(255); // from b
+    expect(u.data[1]).toBe(0); // neither
+  });
+
+  it("is immutable — neither input is mutated", () => {
+    const a = createBlankBuffer(2, 2);
+    const b = createBlankBuffer(2, 2);
+    b.data[0] = 255;
+    const u = unionBuffers(a, b);
+    expect(isBufferEmpty(a)).toBe(true); // a untouched
+    expect(b.data[0]).toBe(255); // b untouched
+    expect(u).not.toBe(a);
+    expect(u).not.toBe(b);
+  });
+
+  it("keeps the binary invariant", () => {
+    const a = createBlankBuffer(3, 3);
+    a.data[4] = 255;
+    const b = createBlankBuffer(3, 3);
+    b.data[4] = 255; // overlap
+    b.data[0] = 255;
+    assertBinary(unionBuffers(a, b));
+  });
+
+  it("throws on a dimension mismatch (guards a bad decode)", () => {
+    const a = createBlankBuffer(4, 4);
+    const b = createBlankBuffer(2, 2);
+    expect(() => unionBuffers(a, b)).toThrow();
   });
 });

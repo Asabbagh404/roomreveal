@@ -1,6 +1,7 @@
-import { DETECT_BACKEND, autoEmptyRoom, detect, detectLocal, editAdd, editRemove, inpaint, uploadArtifact, video } from "@/pipeline";
+import { DETECT_BACKEND, autoEmptyRoom, detect, detectLocal, editAdd, editRemove, inpaint, pointSegment, pointSegmentLocal, uploadArtifact, video } from "@/pipeline";
 import { encodeMaskPng } from "@/lib/mask-encode";
-import { isBufferEmpty } from "@/lib/mask-buffer";
+import { isBufferEmpty, unionBuffers } from "@/lib/mask-buffer";
+import { decodeMaskToBuffer } from "@/lib/mask-decode";
 import type { GenerationAction } from "./reducer";
 import { isStepError, makeStepError } from "./step-error";
 import type { Generation, WaitPhase } from "./types";
@@ -227,6 +228,75 @@ export async function runEdit(
     dispatch({
       type: "SET_ERROR",
       error: isStepError(err) ? err : makeStepError("edit", true),
+    });
+  }
+}
+
+/**
+ * Segments the object under a clicked point and unions it into the draft mask
+ * (Story 5.6, AD-12). SAM point-prompt via `pointSegment` (fal) or
+ * `pointSegmentLocal` (DETECT_BACKEND === "local") on the current work image,
+ * then decodes the returned mask to a canonical binary buffer and ORs it with
+ * the existing draft (unionBuffers) so successive clicks accumulate. Reuses
+ * SET_MASK_BUFFER (no new action; the union/decode are effects, the reducer stays
+ * pure — AD-3). Deliberately does NOT touch waitPhase: the editor shows its own
+ * inline pulse loader, not the full-screen WaitPanel. Lazy work-image upload
+ * mirrors runEdit. A result is dropped once the run is dead (aborted/stale).
+ * Failure → retryable SET_ERROR("pointSegment") (AD-8). AR-LAYERS.
+ */
+export async function runPointSegment(
+  state: Generation,
+  dispatch: Dispatch,
+  { x, y, signal, isStale }: RunContext & { x: number; y: number },
+): Promise<void> {
+  const editBase = state.editBase;
+  if (editBase === undefined) return;
+  const width = editBase.width;
+  const height = editBase.height;
+  if (width === undefined || height === undefined) return; // dims not measured
+
+  const dead = () => signal.aborted || isStale();
+  // Point-segment feedback is the editor's inline pulse, so phases are ignored
+  // here (no SET_WAIT_PHASE → the full-screen WaitPanel never shows).
+  const onPhase = () => {};
+  const point = { x, y };
+
+  try {
+    let result;
+    if (DETECT_BACKEND === "local") {
+      // The local service needs the image bytes. Use the uploaded blob, or fetch
+      // the previous result URL back into a blob when the blob is gone.
+      let blob = editBase.blob;
+      if (blob === undefined) {
+        if (editBase.url === undefined) return;
+        blob = await (await fetch(editBase.url)).blob();
+        if (dead()) return;
+      }
+      result = await pointSegmentLocal(blob, point, { signal, onPhase });
+    } else {
+      // fal needs a fal URL — upload the work image once, lazily (like runEdit).
+      let imageUrl = editBase.url;
+      if (imageUrl === undefined) {
+        if (editBase.blob === undefined) return;
+        imageUrl = await uploadArtifact(editBase.blob);
+        if (dead()) return;
+        dispatch({ type: "EDIT_BASE_UPLOADED", url: imageUrl });
+      }
+      result = await pointSegment(imageUrl, point, { signal, onPhase });
+    }
+    if (dead()) return; // superseded or cancelled — drop the result
+
+    const decoded = await decodeMaskToBuffer(result.mask, width, height);
+    if (dead()) return;
+    const current = state.maskDraft?.buffer;
+    const next =
+      current !== undefined ? unionBuffers(current, decoded) : decoded;
+    dispatch({ type: "SET_MASK_BUFFER", buffer: next });
+  } catch (err) {
+    if (dead()) return; // a cancelled/superseded run must not paint an error
+    dispatch({
+      type: "SET_ERROR",
+      error: isStepError(err) ? err : makeStepError("pointSegment", true),
     });
   }
 }

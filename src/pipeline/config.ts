@@ -24,6 +24,12 @@ export const MODELS = {
   // but that generative behavior is exactly what ADDING an object wants. Swappable
   // (bench-ready vs bria/genfill). Mask white = where the described object goes.
   editAdd: "fal-ai/flux-pro/v1/fill",
+  // Point-prompt segmentation for click-to-select in the free editor (Story 5.6):
+  // SAM's OTHER interface — a single click point → the mask of the object under it
+  // (vs `detect`, which text-prompts the SAME family). Backend piloted by
+  // DETECT_BACKEND (fal here; local Grounded-SAM point route otherwise). Mask
+  // white = the selected object; unioned into the draft mask client-side.
+  pointSegment: "fal-ai/sam2/image",
   video: "fal-ai/kling-video/o1/image-to-video",
 } as const;
 
@@ -36,6 +42,8 @@ export const TIMEOUTS_MS = {
   // Free-edit retouch (Story 5.3 remove = bria eraser; 5.4 add = flux fill).
   edit: 90_000,
   editAdd: 90_000,
+  // Click-to-select is interactive — a click should feel near-instant; cap short.
+  pointSegment: 60_000,
 } as const;
 
 /** Retain every fal object (uploads + generations) for 24 h (AD-9 / AR-EPHEMERAL). */
@@ -75,7 +83,7 @@ export const LOCAL_DETECT_TIMEOUT_MS = 180_000;
  * the proxy's default allowed URL patterns (a separate, URL-pattern gate).
  *
  * Wired models: detect + inpaint (bria) + emptyRoomAuto (nano) + editAdd
- * (flux fill) + video (kling).
+ * (flux fill) + pointSegment (sam2, click-to-select) + video (kling).
  */
 export const FAL_ALLOWED_ENDPOINTS: readonly string[] = [
   `${MODELS.detect}/**`,
@@ -88,6 +96,9 @@ export const FAL_ALLOWED_ENDPOINTS: readonly string[] = [
   // from the allowlist at the 3.1 swap to bria; the edit-add role needs it back.
   `${MODELS.editAdd}/**`,
   `${MODELS.editAdd}`,
+  // Point-prompt SAM for click-to-select (Story 5.6, fal backend).
+  `${MODELS.pointSegment}/**`,
+  `${MODELS.pointSegment}`,
   `${MODELS.video}/**`,
   `${MODELS.video}`,
 ];

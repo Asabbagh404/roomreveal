@@ -4,9 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   paintStroke,
   type MaskBuffer,
+  type MaskTool,
   type Point,
-  type StrokeMode,
 } from "@/lib/mask-buffer";
+import { SelectPulse, type SelectPhase } from "@/components/select-pulse";
 import {
   canRedo as canRedoH,
   canUndo as canUndoH,
@@ -44,6 +45,14 @@ interface MaskCanvasProps {
   onCommit: (next: MaskBuffer) => void;
   /** Alt text for the background image (a11y). */
   backgroundAlt?: string;
+  /** Enables the click-to-select tool (Story 5.6, edit mode only). Reveal mode
+   * leaves this false so the tool never appears. */
+  selectable?: boolean;
+  /** Called with the clicked buffer point when the select tool is active. The
+   * host segments the object under it (SAM point-prompt) and unions the mask. */
+  onPointSelect?: (point: Point) => void;
+  /** True while the host's segmentation is in flight — drives the pulse loader. */
+  selecting?: boolean;
 }
 
 /**
@@ -63,13 +72,25 @@ export function MaskCanvas({
   epoch,
   onCommit,
   backgroundAlt = "Votre photo",
+  selectable = false,
+  onPointSelect,
+  selecting = false,
 }: MaskCanvasProps) {
   // ---- UI-local editor state (lost on unmount per AD-13) ----
-  const [tool, setTool] = useState<StrokeMode>("brush");
+  const [tool, setTool] = useState<MaskTool>("brush");
   const [brushSize, setBrushSize] = useState(DEFAULT_BRUSH);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [history, setHistory] = useState<History<MaskBuffer> | null>(null);
+
+  // ---- Click-to-select pulse (Story 5.6) ----
+  const [selectAnchor, setSelectAnchor] = useState<Point | null>(null);
+  const [selectPhase, setSelectPhase] = useState<SelectPhase>("idle");
+  // Buffer reference captured when a select click fires; on resolve, a changed
+  // reference means the object landed (reveal pulse), unchanged means it failed
+  // or was cancelled (brief error blip).
+  const bufferAtSelectRef = useRef<MaskBuffer | undefined>(undefined);
+  const prevSelectingRef = useRef(false);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -82,12 +103,18 @@ export function MaskCanvas({
   const panRef = useRef(pan);
   const historyRef = useRef(history);
   const bufferRef = useRef(buffer);
+  const onPointSelectRef = useRef(onPointSelect);
+  const selectableRef = useRef(selectable);
+  const selectingRef = useRef(selecting);
   useEffect(() => void (toolRef.current = tool), [tool]);
   useEffect(() => void (brushRef.current = brushSize), [brushSize]);
   useEffect(() => void (zoomRef.current = zoom), [zoom]);
   useEffect(() => void (panRef.current = pan), [pan]);
   useEffect(() => void (historyRef.current = history), [history]);
   useEffect(() => void (bufferRef.current = buffer), [buffer]);
+  useEffect(() => void (onPointSelectRef.current = onPointSelect), [onPointSelect]);
+  useEffect(() => void (selectableRef.current = selectable), [selectable]);
+  useEffect(() => void (selectingRef.current = selecting), [selecting]);
 
   // ---- (Re)initialize the local undo stack from the surviving buffer, once
   // per attempt — history is UI-local and rebuilt on remount (AD-13). ----
@@ -123,6 +150,25 @@ export function MaskCanvas({
   useEffect(() => {
     if (buffer !== undefined) drawOverlay(buffer);
   }, [buffer, drawOverlay]);
+
+  // ---- Resolve the select pulse when the host's segmentation settles ----
+  useEffect(() => {
+    const was = prevSelectingRef.current;
+    prevSelectingRef.current = selecting;
+    if (!was || selecting) return; // only act on the true → false transition
+    // A changed buffer reference = the object was added (reveal); otherwise the
+    // call failed or was cancelled (a brief error blip).
+    const landed = bufferAtSelectRef.current !== buffer;
+    setSelectPhase(landed ? "reveal" : "error");
+    const t = setTimeout(
+      () => {
+        setSelectPhase("idle");
+        setSelectAnchor(null);
+      },
+      landed ? 550 : 350,
+    );
+    return () => clearTimeout(t);
+  }, [selecting, buffer]);
 
   // ---- Commit / undo / redo (mirror the host via onCommit + local history) ----
   const commitBuffer = useCallback(
@@ -210,6 +256,11 @@ export function MaskCanvas({
       const el = viewportRef.current;
       const cursor = cursorRef.current;
       if (el === null || cursor === null || width === 0) return;
+      // The brush-size circle is meaningless for click-to-select — hide it.
+      if (toolRef.current === "select") {
+        cursor.style.opacity = "0";
+        return;
+      }
       const rect = el.getBoundingClientRect();
       if (rect.width === 0) return;
       const scale = (rect.width / width) * zoomRef.current;
@@ -224,6 +275,21 @@ export function MaskCanvas({
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      // ---- Click-to-select (Story 5.6): a click segments the object, no paint.
+      if (selectableRef.current && toolRef.current === "select") {
+        if (selectingRef.current) return; // a segmentation is already in flight
+        const p = toBufferPoint(e.clientX, e.clientY);
+        if (p === null) return;
+        const el = viewportRef.current;
+        if (el !== null) {
+          const rect = el.getBoundingClientRect();
+          setSelectAnchor({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+          setSelectPhase("pulsing");
+        }
+        bufferAtSelectRef.current = bufferRef.current;
+        onPointSelectRef.current?.(p);
+        return;
+      }
       if (bufferRef.current === undefined) return;
       // Pointer capture keeps events flowing if the pointer leaves the element
       // mid-stroke; it is an optimization, so a rare NotFoundError (no active
@@ -287,7 +353,10 @@ export function MaskCanvas({
     strokePointsRef.current = [];
     lastBufPointRef.current = null;
     if (base === undefined || points.length === 0) return;
-    const next = paintStroke(base, points, brushRef.current, toolRef.current);
+    // Painting only starts in brush/eraser mode (select returns early on down),
+    // so narrow the tool to a StrokeMode for paintStroke.
+    const mode = toolRef.current === "eraser" ? "eraser" : "brush";
+    const next = paintStroke(base, points, brushRef.current, mode);
     commitBuffer(next); // authoritative; the overlay effect redraws (snaps binary)
   }, [commitBuffer]);
 
@@ -357,6 +426,10 @@ export function MaskCanvas({
         case "e":
         case "E":
           setTool("eraser");
+          break;
+        case "s":
+        case "S":
+          if (selectableRef.current) setTool("select");
           break;
         case "[":
           setBrushSize((s) => stepBrush(s, -1));
@@ -436,11 +509,13 @@ export function MaskCanvas({
           aria-hidden
           className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 opacity-0 mix-blend-difference"
         />
+        <SelectPulse anchor={selectAnchor} phase={selectPhase} />
       </div>
 
       <MaskToolbar
         tool={tool}
         size={brushSize}
+        selectable={selectable}
         canUndo={h !== null && canUndoH(h)}
         canRedo={h !== null && canRedoH(h)}
         onToolChange={setTool}

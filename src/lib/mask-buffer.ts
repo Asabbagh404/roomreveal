@@ -16,6 +16,11 @@ export interface MaskBuffer {
 
 export type StrokeMode = "brush" | "eraser";
 
+/** Editor tools: the two painting modes plus click-to-select (Story 5.6). Only
+ * `brush`/`eraser` reach paintStroke; `select` is handled by the host as a click
+ * that segments an object (SAM point-prompt) and unions it into the buffer. */
+export type MaskTool = StrokeMode | "select";
+
 export interface Point {
   x: number;
   y: number;
@@ -105,4 +110,22 @@ export function paintStroke(
  * to enable "Valider le Masque" only on a non-empty mask (UX-DR13). */
 export function isBufferEmpty(buffer: MaskBuffer): boolean {
   return !buffer.data.some((v) => v !== MASK_OFF);
+}
+
+/**
+ * Returns a NEW buffer = the per-pixel union (max) of two same-sized binary
+ * buffers (Story 5.6). Click-to-select adds a segmented object's mask on top of
+ * whatever is already drawn, so pixels accumulate. Immutable — neither input is
+ * mutated. Throws on a dimension mismatch (a decode that produced the wrong size
+ * must never silently corrupt the draft).
+ */
+export function unionBuffers(a: MaskBuffer, b: MaskBuffer): MaskBuffer {
+  if (a.width !== b.width || a.height !== b.height) {
+    throw new Error("unionBuffers: dimension mismatch");
+  }
+  const data = new Uint8Array(a.data.length);
+  for (let i = 0; i < data.length; i++) {
+    data[i] = a.data[i] >= b.data[i] ? a.data[i] : b.data[i];
+  }
+  return { data, width: a.width, height: a.height };
 }
