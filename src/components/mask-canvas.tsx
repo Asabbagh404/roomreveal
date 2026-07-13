@@ -61,6 +61,9 @@ interface MaskCanvasProps {
   /** True while a retouch is being applied — the pink mask zones pulse in place
    * of a full-screen loader (edit mode, Story 5.4 polish). */
   pulsing?: boolean;
+  /** Optional control rendered to the RIGHT of the mask toolbar, stretched to its
+   * height (edit mode's « Appliquer », a tall gold check button). */
+  toolbarAction?: React.ReactNode;
 }
 
 /**
@@ -84,6 +87,7 @@ export function MaskCanvas({
   onSelect,
   selecting = false,
   pulsing = false,
+  toolbarAction,
 }: MaskCanvasProps) {
   // ---- UI-local editor state (lost on unmount per AD-13) ----
   const [tool, setTool] = useState<MaskTool>("brush");
@@ -249,6 +253,9 @@ export function MaskCanvas({
       return;
     }
     if (!was) return; // was already idle — nothing settled
+    // The result arrived → drop the kept drag rectangle (Story 5.7 polish); the
+    // reveal silhouette pulse takes over from here.
+    if (selectBoxRef.current) selectBoxRef.current.style.opacity = "0";
     // A changed buffer reference = the object landed (reveal); otherwise the
     // call failed or was cancelled (a brief error blip).
     const landed = bufferAtSelectRef.current !== buffer;
@@ -278,6 +285,7 @@ export function MaskCanvas({
     if (next !== "select") {
       setSelectPhase("idle");
       setSelectAnchor(null);
+      if (selectBoxRef.current) selectBoxRef.current.style.opacity = "0";
     }
   }, []);
 
@@ -498,22 +506,35 @@ export function MaskCanvas({
       const cur = selectCurRef.current;
       selectStartRef.current = null;
       selectCurRef.current = null;
-      if (selectBoxRef.current) selectBoxRef.current.style.opacity = "0";
-      if (start === null || cur === null) return;
-      setSelectAnchor({ x: cur.sx, y: cur.sy });
+      if (start === null || cur === null) {
+        if (selectBoxRef.current) selectBoxRef.current.style.opacity = "0";
+        return;
+      }
+      const dragPx = Math.hypot(cur.sx - start.sx, cur.sy - start.sy);
+      const isBox = dragPx >= SELECT_DRAG_THRESHOLD_PX;
+      if (isBox) {
+        // Keep the drawn rectangle visible until the result arrives, and pulse
+        // from the CENTER of the box (not the release point) (Story 5.7 polish).
+        setSelectAnchor({
+          x: (start.sx + cur.sx) / 2,
+          y: (start.sy + cur.sy) / 2,
+        });
+      } else {
+        // A click: no box to keep — hide it, pulse at the click point.
+        if (selectBoxRef.current) selectBoxRef.current.style.opacity = "0";
+        setSelectAnchor({ x: start.sx, y: start.sy });
+      }
       setSelectPhase("pulsing");
       bufferAtSelectRef.current = bufferRef.current;
-      const dragPx = Math.hypot(cur.sx - start.sx, cur.sy - start.sy);
-      const region: SelectRegion =
-        dragPx < SELECT_DRAG_THRESHOLD_PX
-          ? { kind: "point", x: start.buf.x, y: start.buf.y }
-          : {
-              kind: "box",
-              x0: start.buf.x,
-              y0: start.buf.y,
-              x1: cur.buf.x,
-              y1: cur.buf.y,
-            };
+      const region: SelectRegion = isBox
+        ? {
+            kind: "box",
+            x0: start.buf.x,
+            y0: start.buf.y,
+            x1: cur.buf.x,
+            y1: cur.buf.y,
+          }
+        : { kind: "point", x: start.buf.x, y: start.buf.y };
       onSelectRef.current?.(region);
       return;
     }
@@ -756,6 +777,7 @@ export function MaskCanvas({
         onSizeChange={setBrushSize}
         onUndo={doUndo}
         onRedo={doRedo}
+        action={toolbarAction}
       />
     </>
   );

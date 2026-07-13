@@ -12,16 +12,6 @@ function renderHome() {
 }
 
 describe("RoomReveal shell (smoke test)", () => {
-  it("renders the wizard shell with the privacy footer line", () => {
-    renderHome();
-
-    expect(
-      screen.getByText(
-        "Vos photos sont supprimées automatiquement après 24 heures.",
-      ),
-    ).toBeDefined();
-  });
-
   it("renders the small-screen guard message", () => {
     renderHome();
 

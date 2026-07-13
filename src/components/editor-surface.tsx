@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, Download, ImagePlus } from "lucide-react";
 import { useGeneration } from "@/state/generation-context";
 import { runEdit, runPointSegment } from "@/state/effects";
 import { makeStepError } from "@/state/step-error";
@@ -8,7 +9,6 @@ import { createBlankBuffer, isBufferEmpty, type SelectRegion } from "@/lib/mask-
 import { downloadFile } from "@/lib/download-file";
 import { MaskCanvas } from "@/components/mask-canvas";
 import { TextureBar } from "@/components/texture-bar";
-import { GenerationButton } from "@/components/generation-button";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -305,6 +305,39 @@ export function EditorSurface() {
 
   return (
     <div className="flex w-full flex-col items-center gap-4">
+      {/* Closure actions (Story 5.5) as icons, top-right above the image:
+          « Nouvelle image » (ghost) · « Télécharger l'image » (gold primary).
+          Aligned to the image's max width so they sit at its top-right corner. */}
+      <div className="flex w-full max-w-3xl flex-col items-end gap-1">
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Nouvelle image"
+            title="Nouvelle image"
+            onClick={newImage}
+          >
+            <ImagePlus className="size-4" aria-hidden />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            aria-label="Télécharger l’image"
+            title="Télécharger l’image"
+            disabled={!ready || downloading}
+            onClick={handleDownload}
+          >
+            <Download className="size-4" aria-hidden />
+          </Button>
+        </div>
+        {downloadError !== null && (
+          <p role="alert" aria-live="assertive" className="text-sm text-erreur">
+            {downloadError}
+          </p>
+        )}
+      </div>
+
       {displayed !== null ? (
         <MaskCanvas
           backgroundUrl={displayed.url}
@@ -322,6 +355,21 @@ export function EditorSurface() {
           onSelect={handleSelect}
           selecting={selecting}
           pulsing={applying}
+          toolbarAction={
+            // « Appliquer » (Story 5.4): a tall gold check button to the right of
+            // the mask toolbar (same height, items-stretch). Disabled until the
+            // operation's inputs are valid; the wave on the zone is the progress.
+            <button
+              type="button"
+              aria-label="Appliquer"
+              title="Appliquer"
+              disabled={!canApply || applying}
+              onClick={handleApply}
+              className="flex h-9 w-14 shrink-0 items-center justify-center rounded-md bg-or-lumineux text-or-lumineux-foreground transition-colors hover:bg-or-lumineux/80 disabled:pointer-events-none disabled:opacity-50"
+            >
+              <Check className="size-5" aria-hidden />
+            </button>
+          }
         />
       ) : (
         <div className="w-full max-w-3xl overflow-hidden rounded-lg border border-bordure">
@@ -398,44 +446,16 @@ export function EditorSurface() {
           </div>
         )}
 
-        {/* No loading label while applying: the wave pulsing on the selected
-            zones IS the progress feedback (the button just disables). */}
-        <GenerationButton
-          disabled={!canApply || applying}
-          onClick={handleApply}
-        >
-          Appliquer
-        </GenerationButton>
+        {/* « Appliquer » moved next to the mask toolbar (a gold check button);
+            the wave pulsing on the selected zones IS the progress feedback. */}
         <p className="text-center text-sm text-texte-secondaire">
           {operation === "add"
             ? "Dessinez où placer l’objet, décrivez-le, puis appliquez."
             : operation === "modify"
               ? "Sélectionnez l’élément, choisissez une texture et/ou décrivez le changement, puis appliquez."
-              : "Cliquez un objet (ou glissez une zone autour d’un meuble entier), sinon peignez, puis appliquez."}
+              : ""}
           {retouchCount > 0 ? ` · Retouche n° ${retouchCount}` : ""}
         </p>
-      </div>
-
-      {/* Closure actions (Story 5.5), separated from the retouch zone: « Nouvelle
-          image » (ghost) · « Télécharger l'image » (gold — the closure primary).
-          Mirrors the reveal player's action row (4.3/4.4). */}
-      <div className="flex w-full max-w-md flex-col items-center gap-2 border-t border-bordure pt-4">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" onClick={newImage}>
-            Nouvelle image
-          </Button>
-          <GenerationButton
-            disabled={!ready || downloading}
-            onClick={handleDownload}
-          >
-            {downloading ? "Téléchargement…" : "Télécharger l’image"}
-          </GenerationButton>
-        </div>
-        {downloadError !== null && (
-          <p role="alert" aria-live="assertive" className="text-sm text-erreur">
-            {downloadError}
-          </p>
-        )}
       </div>
 
       <Dialog

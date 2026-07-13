@@ -36,12 +36,6 @@ export function AppShell({ stepper, children, primaryAction }: AppShellProps) {
             <div className="mt-scene-gap flex justify-end">{primaryAction}</div>
           ) : null}
         </main>
-
-        <footer className="mx-auto w-full max-w-5xl px-6 pb-6">
-          <p className="text-sm text-texte-secondaire">
-            Vos photos sont supprimées automatiquement après 24 heures.
-          </p>
-        </footer>
       </div>
     </>
   );

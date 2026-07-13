@@ -18,6 +18,9 @@ interface MaskToolbarProps {
   onSizeChange: (size: number) => void;
   onUndo: () => void;
   onRedo: () => void;
+  /** Optional trailing control rendered inside the bar, past undo/redo (edit
+   * mode's « Appliquer » gold check button). Separated by a divider. */
+  action?: React.ReactNode;
 }
 
 /**
@@ -37,6 +40,7 @@ export function MaskToolbar({
   onSizeChange,
   onUndo,
   onRedo,
+  action,
 }: MaskToolbarProps) {
   return (
     <div className="flex w-full max-w-md items-center gap-4 rounded-lg border border-bordure bg-surface-elevee px-4 py-3">
@@ -101,6 +105,13 @@ export function MaskToolbar({
           <Redo2 className="size-4" aria-hidden />
         </Button>
       </div>
+
+      {action !== undefined && (
+        <>
+          <span aria-hidden className="h-6 w-px shrink-0 bg-bordure" />
+          {action}
+        </>
+      )}
     </div>
   );
 }
