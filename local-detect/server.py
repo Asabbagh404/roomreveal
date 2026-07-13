@@ -37,8 +37,12 @@ SAM_ID = "facebook/sam-vit-base"
 # 0.30 -> ~23% coverage (misses upper cabinets); 0.20 -> ~60% (bleeds onto
 # ceiling/walls); 0.25 is a balanced start. Lower = catch more. The mask is
 # user-editable afterwards, so err slightly generous.
-BOX_THRESHOLD = 0.25
-TEXT_THRESHOLD = 0.25
+# Lowered 0.25 → 0.22 (2026-07-12) to widen coverage — small counter items /
+# wall-mounted objects were being missed. Over-detection is erasable (the user's
+# gomme) and the mask is user-editable, so err generous. 0.20 bled onto the
+# ceiling/walls in earlier calibration; 0.22 is the balanced point.
+BOX_THRESHOLD = 0.22
+TEXT_THRESHOLD = 0.22
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # --- Lazy model loading ---------------------------------------------------

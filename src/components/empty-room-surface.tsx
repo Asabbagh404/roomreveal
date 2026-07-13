@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useGeneration } from "@/state/generation-context";
-import { runInpaint } from "@/state/effects";
+import { runAutoEmptyRoom, runInpaint } from "@/state/effects";
 import { usePhotoObjectUrl } from "@/components/use-photo-object-url";
 import { GenerationButton } from "@/components/generation-button";
 import { Button } from "@/components/ui/button";
@@ -33,19 +33,21 @@ export function EmptyRoomSurface() {
     epochRef.current = state.epoch;
   }, [state.epoch]);
 
-  // ---- Inpaint on entry. Runs once per attempt: the guards on emptyRoom and
-  // error stop it re-firing. A retry (ErrorBanner → CLEAR_ERROR) clears `error`,
-  // which re-satisfies the guard and re-triggers the run. Deps EXCLUDE waitPhase
-  // to avoid the abort loop (same reasoning as the detection effect in 2.1). ----
+  // ---- Generate the Pièce vide on entry. Two modes (Story 3.4): a VALIDATED
+  // mask → bria eraser (runInpaint, manual/retouch); no mask → the maskless
+  // « Vider automatiquement » edit (runAutoEmptyRoom, Nano Banana). Runs once per
+  // attempt: the guards on emptyRoom/error stop it re-firing; a retry
+  // (ErrorBanner → CLEAR_ERROR) or a régénération re-satisfies the guard. Deps
+  // EXCLUDE waitPhase to avoid the abort loop (same reasoning as detect in 2.1). ----
   useEffect(() => {
     if (state.step !== "emptyRoom") return;
-    if (state.mask === undefined) return;
     if (state.emptyRoom !== undefined) return;
     if (state.error !== undefined) return;
 
     const startEpoch = state.epoch;
     const controller = new AbortController();
-    void runInpaint(state, dispatch, {
+    const run = state.mask !== undefined ? runInpaint : runAutoEmptyRoom;
+    void run(state, dispatch, {
       signal: controller.signal,
       isStale: () => epochRef.current !== startEpoch,
     });
@@ -99,9 +101,10 @@ export function EmptyRoomSurface() {
           Créer ma vidéo
         </GenerationButton>
 
-        {/* Secondary action: re-run inpaint with the SAME validated mask (FR-9).
-            Just dispatch — the entry effect re-fires runInpaint once emptyRoom is
-            cleared (AR-LAYERS). No limit in v1. */}
+        {/* Secondary action: regenerate the Pièce vide (FR-9). Just dispatch —
+            clearing emptyRoom re-fires the entry effect, which picks runInpaint
+            (a validated mask) or runAutoEmptyRoom (maskless) per state.mask
+            (AR-LAYERS). No limit in v1. */}
         <Button
           variant="outline"
           onClick={() => dispatch({ type: "REGENERATE_EMPTY_ROOM" })}

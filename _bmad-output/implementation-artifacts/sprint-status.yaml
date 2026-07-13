@@ -67,6 +67,7 @@ development_status:
   3-1-generation-de-la-piece-vide: done
   3-2-comparaison-cote-a-cote-photo-originale-piece-vide: done
   3-3-regeneration-de-la-piece-vide: done
+  3-4-vider-automatiquement-piece-vide-maskless: done
   epic-3-retrospective: optional
   epic-4: done
   4-1-generation-de-la-revelation-generation-flf: done

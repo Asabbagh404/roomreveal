@@ -11,9 +11,10 @@ describe("pipeline config registry (AR-CONFIG / AR-PROXY)", () => {
     expect(MODELS.detect).toBe("fal-ai/sam-3/image");
   });
 
-  it("allows all three wired models (detect + inpaint + video)", () => {
+  it("allows all wired models (detect + inpaint + emptyRoomAuto + video)", () => {
     expect(FAL_ALLOWED_ENDPOINTS).toContain(MODELS.detect);
     expect(FAL_ALLOWED_ENDPOINTS).toContain(MODELS.inpaint);
+    expect(FAL_ALLOWED_ENDPOINTS).toContain(MODELS.emptyRoomAuto);
     expect(FAL_ALLOWED_ENDPOINTS).toContain(MODELS.video);
   });
 

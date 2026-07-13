@@ -1,4 +1,4 @@
-import { DETECT_BACKEND, detect, detectLocal, inpaint, uploadArtifact, video } from "@/pipeline";
+import { DETECT_BACKEND, autoEmptyRoom, detect, detectLocal, inpaint, uploadArtifact, video } from "@/pipeline";
 import { encodeMaskPng } from "@/lib/mask-encode";
 import { isBufferEmpty } from "@/lib/mask-buffer";
 import type { GenerationAction } from "./reducer";
@@ -111,6 +111,48 @@ export async function runInpaint(
     dispatch({ type: "INPAINT_SUCCEEDED", emptyRoomUrl: result.emptyRoom });
   } catch (err) {
     if (dead()) return; // a cancelled/superseded run must not paint an error
+    dispatch({
+      type: "SET_ERROR",
+      error: isStepError(err) ? err : makeStepError("inpaint", true),
+    });
+  }
+}
+
+/**
+ * Generates the Pièce vide the MASKLESS way (Story 3.4, AD-12): the user chose
+ * « Vider automatiquement », so there's no mask — run the instruction-edit model
+ * on the canonical photo to remove all furniture in one shot. Same shape as
+ * runInpaint (lazy canonical-photo upload + dead() guards) and reuses
+ * INPAINT_SUCCEEDED, so the Pièce vide surface / reducer are unchanged. AR-LAYERS.
+ */
+export async function runAutoEmptyRoom(
+  state: Generation,
+  dispatch: Dispatch,
+  { signal, isStale }: RunContext,
+): Promise<void> {
+  const photo = state.originalPhoto;
+  if (photo === undefined) return;
+
+  const dead = () => signal.aborted || isStale();
+  const onPhase = (phase: WaitPhase) => {
+    if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase });
+  };
+
+  try {
+    let photoUrl = photo.falUrl;
+    if (photoUrl === undefined) {
+      if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase: "uploading" });
+      photoUrl = await uploadArtifact(photo.blob);
+      if (dead()) return;
+      dispatch({ type: "PHOTO_UPLOADED", falUrl: photoUrl });
+    }
+
+    const result = await autoEmptyRoom(photoUrl, { signal, onPhase });
+    if (dead()) return; // superseded or cancelled — drop the result
+
+    dispatch({ type: "INPAINT_SUCCEEDED", emptyRoomUrl: result.emptyRoom });
+  } catch (err) {
+    if (dead()) return;
     dispatch({
       type: "SET_ERROR",
       error: isStepError(err) ? err : makeStepError("inpaint", true),

@@ -14,7 +14,10 @@ export const MODELS = {
   // bria/eraser fills the masked region with plausible background (bare wall/floor),
   // which is the declutter we need (FR-8, SM-2). Mask white = area erased.
   inpaint: "fal-ai/bria/eraser",
-  // Consumed by Epic 4.
+  // Maskless "empty the room" edit (Story 3.4). Live bench (2026-07-13) beat the
+  // mask+eraser path for cleanliness — used when the user picks « Vider
+  // automatiquement » (no mask); the mask+bria path stays for manual retouch.
+  emptyRoomAuto: "fal-ai/nano-banana-2/edit",
   video: "fal-ai/kling-video/o1/image-to-video",
 } as const;
 
@@ -22,6 +25,7 @@ export const MODELS = {
 export const TIMEOUTS_MS = {
   detect: 60_000,
   inpaint: 60_000,
+  emptyRoomAuto: 120_000,
   video: 360_000,
 } as const;
 
@@ -68,6 +72,8 @@ export const FAL_ALLOWED_ENDPOINTS: readonly string[] = [
   `${MODELS.detect}`,
   `${MODELS.inpaint}/**`,
   `${MODELS.inpaint}`,
+  `${MODELS.emptyRoomAuto}/**`,
+  `${MODELS.emptyRoomAuto}`,
   `${MODELS.video}/**`,
   `${MODELS.video}`,
 ];

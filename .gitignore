@@ -48,3 +48,6 @@ local-detect/__pycache__/
 
 # Local review artifacts (generated videos, not source)
 resultat/
+
+# Playwright MCP session artifacts
+.playwright-mcp/

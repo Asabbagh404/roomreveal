@@ -67,6 +67,15 @@ export const FURNITURE_CATEGORIES: readonly string[] = [
   "pot",
   "pan",
   "dish rack",
+  // Wall-mounted & decor (live 2026-07-12: these were the main residuals left
+  // in the empty room — the mask missed them, so name them explicitly)
+  "television",
+  "wall-mounted tv",
+  "faucet",
+  "picture frame",
+  "wall art",
+  "potted plant",
+  "vase",
   // Seating & tables
   "stool",
   "dining table",
@@ -82,6 +91,15 @@ export const FURNITURE_CATEGORIES: readonly string[] = [
  */
 export const EMPTY_ROOM_PROMPT =
   "empty room, bare floor and walls, no furniture, consistent lighting and perspective, photorealistic interior";
+
+/**
+ * Maskless « Vider automatiquement » prompt (Story 3.4) for the instruction-edit
+ * model `fal-ai/nano-banana-2/edit` (Gemini). Removes ALL furniture in one shot
+ * while preserving the room shell + perspective. Validated live 2026-07-13
+ * (empties the room far cleaner than mask+eraser, 2/2 photos). [À calibrer live]
+ */
+export const EMPTY_ROOM_AUTO_PROMPT =
+  "Remove ALL furniture, cabinets, kitchen island, appliances, wall-mounted TV, shelves, rugs, plants and every object. Show the completely EMPTY room: bare smooth painted walls and bare floor only. Keep the exact same room shape, walls, floor, windows, lighting, camera angle and perspective.";
 
 /**
  * FLF motion prompt (kling o1, Story 4.1) — the "mix côtés + plafond" preset.

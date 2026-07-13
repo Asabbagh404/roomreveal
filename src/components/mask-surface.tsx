@@ -14,6 +14,7 @@ import {
 } from "@/lib/mask-buffer";
 import { rasterizeMaskUrl } from "@/lib/mask-raster";
 import { GenerationButton } from "@/components/generation-button";
+import { Button } from "@/components/ui/button";
 import { ErrorBanner } from "@/components/error-banner";
 import {
   canRedo as canRedoH,
@@ -534,13 +535,28 @@ export function MaskSurface() {
       />
 
       <div className="flex flex-col items-center gap-2">
+        {/* Gold primary (UX-DR13): vide la pièce sans masque (Nano Banana, Story
+            3.4). Advancing to emptyRoom WITHOUT a validated mask puts the Pièce
+            vide surface into maskless/auto mode (mask stays undefined). */}
         <GenerationButton
+          disabled={validating}
+          onClick={() => dispatch({ type: "CONFIRM_ADVANCE_FROM", step: "emptyRoom" })}
+        >
+          Vider automatiquement
+        </GenerationButton>
+        {/* Secondary: manual mask → bria eraser (fine control / retouch). */}
+        <Button
+          variant="outline"
           disabled={!canValidate || validating}
-          tooltip={canValidate ? undefined : "Peignez au moins une zone"}
           onClick={handleValidate}
         >
-          {validating ? "Envoi du Masque…" : "Valider le Masque"}
-        </GenerationButton>
+          {validating ? "Envoi du Masque…" : "Valider le Masque à la main"}
+        </Button>
+        {!canValidate && (
+          <p className="text-sm text-texte-secondaire">
+            Peignez au moins une zone pour valider un masque manuel.
+          </p>
+        )}
         {validateError !== null && (
           <p role="alert" aria-live="assertive" className="text-sm text-erreur">
             {validateError}
