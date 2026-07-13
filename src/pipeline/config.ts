@@ -18,6 +18,12 @@ export const MODELS = {
   // mask+eraser path for cleanliness — used when the user picks « Vider
   // automatiquement » (no mask); the mask+bria path stays for manual retouch.
   emptyRoomAuto: "fal-ai/nano-banana-2/edit",
+  // Masked generative fill for the free-edit « Ajouter » (Story 5.4): regenerates
+  // the WHITE masked region per the text prompt, leaving the rest intact. Note:
+  // this is flux fill — rejected in 3.1 for *removal* (it reconstructs furniture)
+  // but that generative behavior is exactly what ADDING an object wants. Swappable
+  // (bench-ready vs bria/genfill). Mask white = where the described object goes.
+  editAdd: "fal-ai/flux-pro/v1/fill",
   video: "fal-ai/kling-video/o1/image-to-video",
 } as const;
 
@@ -29,6 +35,7 @@ export const TIMEOUTS_MS = {
   video: 360_000,
   // Free-edit retouch (Story 5.3 remove = bria eraser; 5.4 add = flux fill).
   edit: 90_000,
+  editAdd: 90_000,
 } as const;
 
 /** Retain every fal object (uploads + generations) for 24 h (AD-9 / AR-EPHEMERAL). */
@@ -67,7 +74,8 @@ export const LOCAL_DETECT_TIMEOUT_MS = 180_000;
  * by the proxy. Glob syntax (picomatch). Storage/queue endpoints are covered by
  * the proxy's default allowed URL patterns (a separate, URL-pattern gate).
  *
- * All three pipeline models are now wired (detect + inpaint + video).
+ * Wired models: detect + inpaint (bria) + emptyRoomAuto (nano) + editAdd
+ * (flux fill) + video (kling).
  */
 export const FAL_ALLOWED_ENDPOINTS: readonly string[] = [
   `${MODELS.detect}/**`,
@@ -76,6 +84,10 @@ export const FAL_ALLOWED_ENDPOINTS: readonly string[] = [
   `${MODELS.inpaint}`,
   `${MODELS.emptyRoomAuto}/**`,
   `${MODELS.emptyRoomAuto}`,
+  // Re-added for the free-edit « Ajouter » (Story 5.4). flux fill was removed
+  // from the allowlist at the 3.1 swap to bria; the edit-add role needs it back.
+  `${MODELS.editAdd}/**`,
+  `${MODELS.editAdd}`,
   `${MODELS.video}/**`,
   `${MODELS.video}`,
 ];

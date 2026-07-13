@@ -34,10 +34,28 @@ export function EditorSurface() {
   const applyingRef = useRef(false);
   const runControllerRef = useRef<AbortController | null>(null);
 
+  // Operation toggle (Story 5.4): « Enlever » (bria eraser) or « Ajouter » (flux
+  // fill from a text prompt). The prompt is only used for « Ajouter ».
+  const [operation, setOperation] = useState<"remove" | "add">("remove");
+  const [prompt, setPrompt] = useState("");
+
   // Live epoch for the effect layer to discard superseded results (AD-12).
   const epochRef = useRef(state.epoch);
   useEffect(() => {
     epochRef.current = state.epoch;
+  }, [state.epoch]);
+
+  // Clear the « Ajouter » prompt after each applied retouch (EDIT_APPLIED bumps
+  // the epoch): the described object was added, so the next add starts fresh. On
+  // an error the epoch does NOT bump, so the prompt is preserved for a re-try.
+  // Toggling operation is intentionally NOT reset — the field is only shown for
+  // « Ajouter » and restoring a just-typed prompt on toggle-back is fine.
+  const lastEpochRef = useRef(state.epoch);
+  useEffect(() => {
+    if (state.epoch !== lastEpochRef.current) {
+      lastEpochRef.current = state.epoch;
+      setPrompt("");
+    }
   }, [state.epoch]);
 
   // Count of applied retouches: in edit mode only EDIT_APPLIED bumps the epoch,
@@ -95,11 +113,14 @@ export function EditorSurface() {
     return () => runControllerRef.current?.abort();
   }, []);
 
-  const canApply = buffer !== undefined && !isBufferEmpty(buffer);
+  const hasZone = buffer !== undefined && !isBufferEmpty(buffer);
+  // « Ajouter » also needs a non-empty description; « Enlever » only needs a zone.
+  const canApply = hasZone && (operation === "remove" || prompt.trim() !== "");
 
   const handleApply = useCallback(async () => {
     const buf = state.maskDraft?.buffer;
     if (applyingRef.current || buf === undefined || isBufferEmpty(buf)) return;
+    if (operation === "add" && prompt.trim() === "") return;
     applyingRef.current = true;
     setApplying(true);
     const controller = new AbortController();
@@ -108,7 +129,8 @@ export function EditorSurface() {
     try {
       // runEdit dispatches EDIT_APPLIED on success or SET_ERROR on failure.
       await runEdit(state, dispatch, {
-        operation: "remove",
+        operation,
+        prompt: prompt.trim(),
         signal: controller.signal,
         isStale: () => epochRef.current !== startEpoch,
       });
@@ -116,7 +138,7 @@ export function EditorSurface() {
       applyingRef.current = false;
       setApplying(false);
     }
-  }, [state, dispatch]);
+  }, [state, dispatch, operation, prompt]);
 
   const ready = backgroundUrl !== null && width > 0 && height > 0;
 
@@ -138,10 +160,43 @@ export function EditorSurface() {
         </div>
       )}
 
-      <div className="flex flex-col items-center gap-2">
-        {/* Gold primary (UX-DR13): erase the drawn zone (bria eraser). Disabled
-            until the user has painted something. « Ajouter » (5.4) will sit
-            alongside this via an operation toggle. */}
+      <div className="flex w-full max-w-md flex-col items-center gap-3">
+        {/* Operation toggle (Story 5.4): a secondary control, not a second gold
+            action — « Appliquer » stays the single primary (UX-DR13). */}
+        <div
+          role="group"
+          aria-label="Opération"
+          className="flex gap-1 rounded-full border border-bordure bg-surface-elevee p-1"
+        >
+          {(["remove", "add"] as const).map((op) => (
+            <button
+              key={op}
+              type="button"
+              aria-pressed={operation === op}
+              onClick={() => setOperation(op)}
+              className={
+                "rounded-full px-4 py-1.5 text-carton-titre transition-colors " +
+                (operation === op
+                  ? "bg-or-lumineux text-or-lumineux-foreground"
+                  : "text-texte-secondaire hover:text-texte-principal")
+              }
+            >
+              {op === "remove" ? "Enlever" : "Ajouter"}
+            </button>
+          ))}
+        </div>
+
+        {operation === "add" && (
+          <input
+            type="text"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="pot de fleur, tableau…"
+            aria-label="Objet à ajouter"
+            className="w-full rounded-lg border border-bordure bg-surface-carte px-4 py-2 text-texte-principal placeholder:text-texte-secondaire focus:border-or-lumineux focus:outline-none"
+          />
+        )}
+
         <GenerationButton
           subtext="30 s à 1 minute"
           disabled={!canApply || applying}
@@ -149,10 +204,10 @@ export function EditorSurface() {
         >
           {applying ? "Retouche en cours…" : "Appliquer"}
         </GenerationButton>
-        <p className="text-sm text-texte-secondaire">
-          {canApply
-            ? "Dessinez une zone à effacer, puis appliquez."
-            : "Peignez la zone de l’objet à retirer."}
+        <p className="text-center text-sm text-texte-secondaire">
+          {operation === "add"
+            ? "Dessinez où placer l’objet, décrivez-le, puis appliquez."
+            : "Peignez la zone de l’objet à retirer, puis appliquez."}
           {retouchCount > 0 ? ` · Retouche n° ${retouchCount}` : ""}
         </p>
       </div>

@@ -7,7 +7,7 @@ export { detect } from "./detect";
 export { detectLocal } from "./detect-local";
 export { inpaint } from "./inpaint";
 export { autoEmptyRoom } from "./empty-room-auto";
-export { editRemove } from "./edit";
+export { editRemove, editAdd } from "./edit";
 export { video } from "./video";
 export { DETECT_BACKEND } from "./config";
 export type {

@@ -11,11 +11,16 @@ describe("pipeline config registry (AR-CONFIG / AR-PROXY)", () => {
     expect(MODELS.detect).toBe("fal-ai/sam-3/image");
   });
 
-  it("allows all wired models (detect + inpaint + emptyRoomAuto + video)", () => {
+  it("allows all wired models (detect + inpaint + emptyRoomAuto + editAdd + video)", () => {
     expect(FAL_ALLOWED_ENDPOINTS).toContain(MODELS.detect);
     expect(FAL_ALLOWED_ENDPOINTS).toContain(MODELS.inpaint);
     expect(FAL_ALLOWED_ENDPOINTS).toContain(MODELS.emptyRoomAuto);
+    expect(FAL_ALLOWED_ENDPOINTS).toContain(MODELS.editAdd);
     expect(FAL_ALLOWED_ENDPOINTS).toContain(MODELS.video);
+  });
+
+  it("references flux-pro/v1/fill for the edit-add role (Story 5.4)", () => {
+    expect(MODELS.editAdd).toBe("fal-ai/flux-pro/v1/fill");
   });
 
   it("retains fal objects for 24 h (AD-9)", () => {

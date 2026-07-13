@@ -6,6 +6,7 @@ const detectLocal = vi.fn();
 const inpaint = vi.fn();
 const autoEmptyRoom = vi.fn();
 const editRemove = vi.fn();
+const editAdd = vi.fn();
 const videoFn = vi.fn();
 const uploadArtifact = vi.fn();
 vi.mock("@/pipeline", () => ({
@@ -15,6 +16,7 @@ vi.mock("@/pipeline", () => ({
   inpaint: (...a: unknown[]) => inpaint(...a),
   autoEmptyRoom: (...a: unknown[]) => autoEmptyRoom(...a),
   editRemove: (...a: unknown[]) => editRemove(...a),
+  editAdd: (...a: unknown[]) => editAdd(...a),
   video: (...a: unknown[]) => videoFn(...a),
   uploadArtifact: (...a: unknown[]) => uploadArtifact(...a),
 }));
@@ -49,6 +51,7 @@ afterEach(() => {
   inpaint.mockReset();
   autoEmptyRoom.mockReset();
   editRemove.mockReset();
+  editAdd.mockReset();
   videoFn.mockReset();
   uploadArtifact.mockReset();
   encodeMaskPng.mockClear();
@@ -742,5 +745,77 @@ describe("runEdit (AD-12 free-edit remove, Story 5.3)", () => {
         (c) => c[0].type === "EDIT_APPLIED" || c[0].type === "SET_ERROR",
       ),
     ).toBe(false);
+  });
+});
+
+describe("runEdit — add operation (Story 5.4, flux fill)", () => {
+  const paintedMask = { data: new Uint8Array([0, 255, 0, 0]), width: 2, height: 2 };
+  function editState(overrides: Partial<Generation> = {}): Generation {
+    return {
+      step: "editor",
+      epoch: 1,
+      mode: "edit",
+      editBase: { url: "https://fal/work.jpg", width: 1024, height: 768 },
+      maskDraft: { detectedMaskUrl: null, buffer: paintedMask },
+      ...overrides,
+    };
+  }
+
+  it("calls editAdd with the prompt and dispatches EDIT_APPLIED", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/mask.png");
+    editAdd.mockResolvedValue({ image: "https://fal/added.png" });
+    const dispatch = vi.fn();
+
+    await runEdit(editState(), dispatch, {
+      operation: "add",
+      prompt: "pot de fleur",
+      signal,
+      isStale: notStale,
+    });
+
+    expect(editAdd).toHaveBeenCalledWith(
+      "https://fal/work.jpg",
+      "https://fal/mask.png",
+      "pot de fleur",
+      expect.anything(),
+    );
+    expect(editRemove).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "EDIT_APPLIED",
+      image: "https://fal/added.png",
+    });
+  });
+
+  it("is a no-op for add with an empty/whitespace prompt (never calls editAdd)", async () => {
+    const dispatch = vi.fn();
+    await runEdit(editState(), dispatch, {
+      operation: "add",
+      prompt: "   ",
+      signal,
+      isStale: notStale,
+    });
+    await runEdit(editState(), dispatch, {
+      operation: "add",
+      prompt: undefined,
+      signal,
+      isStale: notStale,
+    });
+    expect(editAdd).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("remove operation still routes to editRemove, not editAdd", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/mask.png");
+    editRemove.mockResolvedValue({ image: "https://fal/erased.png" });
+    const dispatch = vi.fn();
+
+    await runEdit(editState(), dispatch, {
+      operation: "remove",
+      signal,
+      isStale: notStale,
+    });
+
+    expect(editRemove).toHaveBeenCalledOnce();
+    expect(editAdd).not.toHaveBeenCalled();
   });
 });

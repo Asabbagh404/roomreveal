@@ -1,4 +1,4 @@
-import { DETECT_BACKEND, autoEmptyRoom, detect, detectLocal, editRemove, inpaint, uploadArtifact, video } from "@/pipeline";
+import { DETECT_BACKEND, autoEmptyRoom, detect, detectLocal, editAdd, editRemove, inpaint, uploadArtifact, video } from "@/pipeline";
 import { encodeMaskPng } from "@/lib/mask-encode";
 import { isBufferEmpty } from "@/lib/mask-buffer";
 import type { GenerationAction } from "./reducer";
@@ -169,21 +169,28 @@ export async function runAutoEmptyRoom(
  * re-upload. A result is dropped without dispatch once the run is dead (epoch
  * bumped by EDIT_APPLIED or signal aborted). Failures become a retryable
  * SET_ERROR of step "edit" (AD-8) — retry is a fresh « Appliquer » click, not an
- * entry effect. AR-LAYERS: the pipeline call lives here. (operation "add" arrives
- * in Story 5.4.)
+ * entry effect. AR-LAYERS: the pipeline call lives here. "add" (Story 5.4) routes
+ * to editAdd (flux fill) with the text prompt; "remove" to editRemove (bria).
  */
 export async function runEdit(
   state: Generation,
   dispatch: Dispatch,
-  // `operation` is "remove" for Story 5.3 (only branch). Story 5.4 widens the
-  // union to `"remove" | "add"` and adds `prompt` for the editAdd (flux fill) path.
-  { signal, isStale }: RunContext & { operation: "remove" },
+  // "remove" → bria eraser (Story 5.3); "add" → flux fill with `prompt` (Story 5.4).
+  {
+    operation,
+    prompt,
+    signal,
+    isStale,
+  }: RunContext & { operation: "remove" | "add"; prompt?: string },
 ): Promise<void> {
   const editBase = state.editBase;
   const buffer = state.maskDraft?.buffer;
   if (editBase === undefined || buffer === undefined || isBufferEmpty(buffer)) {
     return;
   }
+  // Add requires a non-empty description of the object to generate.
+  const trimmedPrompt = prompt?.trim() ?? "";
+  if (operation === "add" && trimmedPrompt === "") return;
 
   const dead = () => signal.aborted || isStale();
   const onPhase = (phase: WaitPhase) => {
@@ -208,8 +215,10 @@ export async function runEdit(
     const maskUrl = await uploadArtifact(png);
     if (dead()) return;
 
-    // operation === "remove" for Story 5.3; "add" (flux fill) lands in 5.4.
-    const result = await editRemove(imageUrl, maskUrl, { signal, onPhase });
+    const result =
+      operation === "add"
+        ? await editAdd(imageUrl, maskUrl, trimmedPrompt, { signal, onPhase })
+        : await editRemove(imageUrl, maskUrl, { signal, onPhase });
     if (dead()) return; // superseded or cancelled — drop the result
 
     dispatch({ type: "EDIT_APPLIED", image: result.image });

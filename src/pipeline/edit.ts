@@ -73,7 +73,78 @@ export async function editRemove(
   }
 }
 
+/**
+ * Free-edit ADD adapter (AD-5, AD-12, Story 5.4): generates the object described
+ * by `prompt` inside the masked (white) region of the working image with
+ * flux-pro/v1/fill, leaving the rest intact, and returns the URL of the result.
+ * Mask white = area regenerated per prompt (AD-7) = where the object goes. Same
+ * skeleton as editRemove; only the model, the `prompt` input and the output shape
+ * differ — flux fill returns an `images[]` array (read `images[0].url`), unlike
+ * bria's single `image`. @fal-ai/client is reached only through ./client.
+ */
+export async function editAdd(
+  imageUrl: string,
+  maskUrl: string,
+  prompt: string,
+  { signal, onPhase }: AdapterOptions,
+): Promise<EditResult> {
+  const controller = new AbortController();
+  const onExternalAbort = () => controller.abort();
+  signal.addEventListener("abort", onExternalAbort);
+  if (signal.aborted) controller.abort();
+
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(makeStepError("edit", true));
+    }, TIMEOUTS_MS.editAdd);
+  });
+
+  try {
+    const run = fal.subscribe(MODELS.editAdd, {
+      input: {
+        image_url: imageUrl,
+        mask_url: maskUrl,
+        prompt,
+      },
+      abortSignal: controller.signal,
+      headers: {
+        "x-fal-object-lifecycle-preference": JSON.stringify({
+          expiration_duration_seconds: ARTIFACT_EXPIRES_IN_SECONDS,
+        }),
+      },
+      onQueueUpdate: (update: { status: string }) => {
+        if (update.status === "IN_QUEUE") onPhase("queued");
+        else if (update.status === "IN_PROGRESS") onPhase("generating");
+        else if (update.status === "COMPLETED") onPhase("finalizing");
+      },
+    });
+    run.catch(() => {});
+
+    const result = (await Promise.race([run, timeoutPromise])) as {
+      data?: EditAddRawOutput;
+    };
+
+    const url = result.data?.images?.[0]?.url;
+    if (typeof url !== "string" || url.trim() === "") {
+      throw makeStepError("edit", true);
+    }
+    return { image: url };
+  } catch {
+    throw makeStepError("edit", true);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+    signal.removeEventListener("abort", onExternalAbort);
+  }
+}
+
 /** The subset of the bria/eraser output the adapter reads. */
 interface EditRawOutput {
   image?: { url?: string };
+}
+
+/** The subset of the flux-pro/v1/fill output the adapter reads. */
+interface EditAddRawOutput {
+  images?: { url?: string }[];
 }
