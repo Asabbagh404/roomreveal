@@ -1,0 +1,89 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+// Mock the fal client (allowed only inside pipeline/, AR-TESTS). The adapter is
+// the unit under test; the network boundary is faked. Never mock @fal-ai/client.
+const subscribe = vi.fn();
+vi.mock("./client", () => ({
+  fal: { subscribe: (...args: unknown[]) => subscribe(...args) },
+  uploadArtifact: vi.fn(),
+}));
+
+import { editRemove } from "./edit";
+
+const opts = { signal: new AbortController().signal, onPhase: vi.fn() };
+
+afterEach(() => {
+  subscribe.mockReset();
+});
+
+describe("editRemove adapter (Story 5.3, bria eraser)", () => {
+  it("returns the erased image URL", async () => {
+    subscribe.mockResolvedValue({ data: { image: { url: "https://fal/out.png" } } });
+    const result = await editRemove("https://fal/work.jpg", "https://fal/mask.png", opts);
+    expect(result.image).toBe("https://fal/out.png");
+  });
+
+  it("sends the work image + mask URLs and a manual mask type", async () => {
+    subscribe.mockResolvedValue({ data: { image: { url: "u" } } });
+    await editRemove("https://fal/work.jpg", "https://fal/mask.png", opts);
+    const [, cfg] = subscribe.mock.calls[0] as [string, { input: Record<string, unknown> }];
+    expect(cfg.input.image_url).toBe("https://fal/work.jpg");
+    expect(cfg.input.mask_url).toBe("https://fal/mask.png");
+    expect(cfg.input.mask_type).toBe("manual");
+  });
+
+  it("maps queue statuses to wait phases", async () => {
+    const onPhase = vi.fn();
+    subscribe.mockImplementation(
+      (_id: string, cfg: { onQueueUpdate: (u: { status: string }) => void }) => {
+        cfg.onQueueUpdate({ status: "IN_QUEUE" });
+        cfg.onQueueUpdate({ status: "IN_PROGRESS" });
+        cfg.onQueueUpdate({ status: "COMPLETED" });
+        return Promise.resolve({ data: { image: { url: "u" } } });
+      },
+    );
+    await editRemove("https://fal/work.jpg", "https://fal/mask.png", { ...opts, onPhase });
+    expect(onPhase).toHaveBeenCalledWith("queued");
+    expect(onPhase).toHaveBeenCalledWith("generating");
+    expect(onPhase).toHaveBeenCalledWith("finalizing");
+  });
+
+  it("throws a retryable edit StepError when the model returns no image", async () => {
+    subscribe.mockResolvedValue({ data: {} });
+    const rejection = await editRemove("https://fal/work.jpg", "https://fal/mask.png", opts).catch(
+      (e) => e,
+    );
+    expect(rejection).toMatchObject({ step: "edit", retryable: true });
+  });
+
+  it("treats an empty-string image URL as a failure", async () => {
+    subscribe.mockResolvedValue({ data: { image: { url: "" } } });
+    const rejection = await editRemove("https://fal/work.jpg", "https://fal/mask.png", opts).catch(
+      (e) => e,
+    );
+    expect(rejection).toMatchObject({ step: "edit", retryable: true });
+  });
+
+  it("times out into a retryable edit StepError when the model never settles", async () => {
+    vi.useFakeTimers();
+    try {
+      subscribe.mockReturnValue(new Promise(() => {})); // never resolves
+      const rejection = editRemove("https://fal/work.jpg", "https://fal/mask.png", opts).catch(
+        (e) => e,
+      );
+      await vi.advanceTimersByTimeAsync(90_001); // TIMEOUTS_MS.edit
+      expect(await rejection).toMatchObject({ step: "edit", retryable: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("converts a rejection into a retryable edit StepError, never leaking the raw fal error", async () => {
+    subscribe.mockRejectedValue(new Error("fal 500 boom"));
+    const rejection = await editRemove("https://fal/work.jpg", "https://fal/mask.png", opts).catch(
+      (e) => e,
+    );
+    expect(rejection).toMatchObject({ step: "edit", retryable: true });
+    expect(rejection.userMessage).not.toContain("boom");
+  });
+});

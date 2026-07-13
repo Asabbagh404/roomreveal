@@ -13,6 +13,8 @@ const STEP_MESSAGES: Record<PipelineStep, string> = {
     "La pièce vide n'a pas abouti. Votre Masque est conservé — relancez quand vous voulez.",
   video:
     "La vidéo n'a pas abouti. Votre Masque et votre Pièce vide sont conservés — relancez quand vous voulez.",
+  edit:
+    "La retouche n'a pas abouti. Votre image est conservée — réessayez quand vous voulez.",
 };
 
 export function makeStepError(
@@ -27,7 +29,10 @@ export function isStepError(err: unknown): err is StepError {
   const e = err as Record<string, unknown>;
   return (
     typeof e.userMessage === "string" &&
-    (e.step === "detect" || e.step === "inpaint" || e.step === "video") &&
+    (e.step === "detect" ||
+      e.step === "inpaint" ||
+      e.step === "video" ||
+      e.step === "edit") &&
     typeof e.retryable === "boolean"
   );
 }

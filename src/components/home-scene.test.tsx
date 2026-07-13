@@ -55,7 +55,7 @@ describe("HomeScene (Story 5.1, AC1/AC2)", () => {
     ).toBeDefined();
   });
 
-  it("ParcoursScene shows the editor placeholder at the editor step in edit mode", () => {
+  it("ParcoursScene shows the editor at the editor step in edit mode", () => {
     render(
       <GenerationProvider
         initialState={{ step: "editor", epoch: 1, mode: "edit" }}
@@ -63,8 +63,10 @@ describe("HomeScene (Story 5.1, AC1/AC2)", () => {
         <ParcoursScene />
       </GenerationProvider>,
     );
-    expect(
-      screen.getByText("L'éditeur arrive à l'étape suivante."),
-    ).toBeDefined();
+    // No photo in this seeded state → the editor renders its frame + a disabled
+    // « Appliquer » action (EDIT_START no-ops without originalPhoto).
+    const apply = screen.getByRole("button", { name: /Appliquer/ });
+    expect(apply).toBeDefined();
+    expect(apply.hasAttribute("disabled")).toBe(true);
   });
 });

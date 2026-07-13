@@ -318,6 +318,130 @@ describe("generationReducer (pure, no mocks)", () => {
     expect(next).toBe(state); // untouched; reveal artifacts NOT wiped
   });
 
+  // ---- Edit mode: editor step + iterative editBase (Story 5.3) ----
+  const editorAfterUpload = (): Generation => ({
+    step: "editor",
+    epoch: 1,
+    mode: "edit",
+    originalPhoto: {
+      blob: new Blob(["p"]),
+      falUrl: "fal://photo",
+      detectionBlob: new Blob(["d"]),
+      width: 1024,
+      height: 768,
+    },
+  });
+
+  it("EDIT_START seeds editBase from originalPhoto and a blank maskDraft shell", () => {
+    const state = editorAfterUpload();
+    const next = generationReducer(state, { type: "EDIT_START" });
+    expect(next.editBase).toEqual({
+      blob: state.originalPhoto!.blob,
+      url: "fal://photo",
+      width: 1024,
+      height: 768,
+    });
+    // Shell so SET_MASK_BUFFER (which no-ops on undefined maskDraft) can seed it.
+    expect(next.maskDraft).toEqual({ detectedMaskUrl: null, buffer: undefined });
+  });
+
+  it("EDIT_START is a no-op outside the editor step or without a photo", () => {
+    const noPhoto: Generation = { step: "editor", epoch: 1, mode: "edit" };
+    expect(generationReducer(noPhoto, { type: "EDIT_START" })).toBe(noPhoto);
+    const notEditor: Generation = { ...editorAfterUpload(), step: "upload" };
+    expect(generationReducer(notEditor, { type: "EDIT_START" })).toBe(notEditor);
+  });
+
+  it("EDIT_START does not clobber an existing editBase (idempotent entry)", () => {
+    const started = generationReducer(editorAfterUpload(), { type: "EDIT_START" });
+    const again = generationReducer(started, { type: "EDIT_START" });
+    expect(again).toBe(started);
+  });
+
+  it("EDIT_BASE_UPLOADED memoizes the fal url of the work image", () => {
+    const state: Generation = {
+      step: "editor",
+      epoch: 1,
+      mode: "edit",
+      editBase: { blob: new Blob(["w"]), width: 800, height: 600 },
+    };
+    const next = generationReducer(state, {
+      type: "EDIT_BASE_UPLOADED",
+      url: "fal://work",
+    });
+    expect(next.editBase).toEqual({
+      blob: state.editBase!.blob,
+      url: "fal://work",
+      width: 800,
+      height: 600,
+    });
+  });
+
+  it("EDIT_APPLIED replaces editBase with the result, clears the mask, bumps epoch", () => {
+    const state: Generation = {
+      step: "editor",
+      epoch: 3,
+      mode: "edit",
+      editBase: { url: "fal://work", width: 800, height: 600 },
+      maskDraft: { detectedMaskUrl: null, buffer: { width: 800, height: 600, data: new Uint8Array(800 * 600) } },
+    };
+    const next = generationReducer(state, {
+      type: "EDIT_APPLIED",
+      image: "fal://edited",
+    });
+    expect(next.editBase).toEqual({ url: "fal://edited" }); // dims cleared → re-measure
+    expect(next.maskDraft).toEqual({ detectedMaskUrl: null, buffer: undefined });
+    expect(next.epoch).toBe(4);
+    expect(next.step).toBe("editor");
+  });
+
+  it("EDIT_APPLIED is a no-op outside the editor step", () => {
+    const state: Generation = { step: "mask", epoch: 1, mode: "reveal" };
+    expect(generationReducer(state, { type: "EDIT_APPLIED", image: "x" })).toBe(state);
+  });
+
+  it("PHOTO_NORMALIZED clears a prior edit work image (re-upload doesn't reuse a stale editBase)", () => {
+    const state: Generation = {
+      step: "editor",
+      epoch: 5,
+      mode: "edit",
+      editBase: { url: "fal://old-work", width: 800, height: 600 },
+    };
+    const photo = { blob: new Blob(["new"]), detectionBlob: new Blob(["d"]), width: 1024, height: 768 };
+    const next = generationReducer(state, { type: "PHOTO_NORMALIZED", photo });
+    expect(next.editBase).toBeUndefined(); // EDIT_START will re-seed from the new photo
+    expect(next.step).toBe("editor"); // edit mode
+    expect(next.mode).toBe("edit");
+  });
+
+  it("EDIT_BASE_MEASURED fills in the work image dimensions", () => {
+    const state: Generation = {
+      step: "editor",
+      epoch: 4,
+      mode: "edit",
+      editBase: { url: "fal://edited" },
+    };
+    const next = generationReducer(state, {
+      type: "EDIT_BASE_MEASURED",
+      width: 1195,
+      height: 896,
+    });
+    expect(next.editBase).toEqual({ url: "fal://edited", width: 1195, height: 896 });
+  });
+
+  it("SET_MASK_BUFFER seeds the blank buffer onto the edit maskDraft shell", () => {
+    const shell: Generation = {
+      step: "editor",
+      epoch: 1,
+      mode: "edit",
+      editBase: { url: "fal://work", width: 4, height: 4 },
+      maskDraft: { detectedMaskUrl: null, buffer: undefined },
+    };
+    const buffer = { width: 4, height: 4, data: new Uint8Array(16) };
+    const next = generationReducer(shell, { type: "SET_MASK_BUFFER", buffer });
+    expect(next.maskDraft?.buffer).toBe(buffer);
+  });
+
   it("VIDEO_SUCCEEDED stores reveal without advancing the step or bumping epoch", () => {
     const state: Generation = {
       step: "video",

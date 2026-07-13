@@ -9,6 +9,7 @@ const RETRY_LABEL: Record<PipelineStep, string> = {
   detect: "Relancer la détection",
   inpaint: "Relancer la pièce vide",
   video: "Relancer la vidéo",
+  edit: "Réessayer la retouche",
 };
 
 /**

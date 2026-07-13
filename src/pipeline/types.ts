@@ -37,3 +37,13 @@ export interface InpaintResult {
 export interface VideoResult {
   reveal: string;
 }
+
+/**
+ * Result of a free-edit adapter (Story 5.3/5.4). `image` is the URL of the
+ * retouched image on fal storage (an object removed, or added). At canonical
+ * dimensions by construction (the model preserves the input size). The adapter
+ * throws a retryable StepError rather than returning an empty result.
+ */
+export interface EditResult {
+  image: string;
+}

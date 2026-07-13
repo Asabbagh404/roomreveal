@@ -1,4 +1,5 @@
 import {
+  type EditBase,
   type Generation,
   type MaskBuffer,
   type Mode,
@@ -32,6 +33,11 @@ export type GenerationAction =
   | { type: "MASK_VALIDATED"; maskUrl: string }
   | { type: "INPAINT_SUCCEEDED"; emptyRoomUrl: string }
   | { type: "REGENERATE_EMPTY_ROOM" }
+  // Free-edit mode (Story 5.3): iterative editBase + blank-mask shell.
+  | { type: "EDIT_START" }
+  | { type: "EDIT_BASE_UPLOADED"; url: string }
+  | { type: "EDIT_APPLIED"; image: string }
+  | { type: "EDIT_BASE_MEASURED"; width: number; height: number }
   | { type: "VIDEO_SUCCEEDED"; revealUrl: string }
   | { type: "RESET" }
   | { type: "GO_TO_STEP"; step: Step }
@@ -93,6 +99,10 @@ export function generationReducer(
         ...invalidateDownstream("upload"),
         originalPhoto: action.photo,
         maskDraft: undefined,
+        // Clear any prior edit-mode work image so a re-upload (edit mode:
+        // back to Upload via the « Photo » step, then a new photo) doesn't leave
+        // EDIT_START no-op'ing on a stale editBase (Story 5.3).
+        editBase: undefined,
         step: state.mode === "edit" ? "editor" : "mask",
         epoch: state.epoch + 1,
         error: undefined,
@@ -210,6 +220,63 @@ export function generationReducer(
         epoch: state.epoch + 1,
         waitPhase: undefined,
         error: undefined,
+      };
+
+    case "EDIT_START": {
+      // Entering the editor (edit mode, Story 5.3): seed the working image from
+      // the uploaded photo (dims already known at upload) and a blank-mask shell
+      // (buffer undefined) so the surface's seeding effect can SET_MASK_BUFFER
+      // (which no-ops on an undefined maskDraft). No-op if not on the editor
+      // step, without a photo, or if editBase already exists (idempotent entry).
+      if (state.step !== "editor") return state;
+      if (state.originalPhoto === undefined) return state;
+      if (state.editBase !== undefined) return state;
+      const photo = state.originalPhoto;
+      const base: EditBase = {
+        blob: photo.blob,
+        url: photo.falUrl,
+        width: photo.width,
+        height: photo.height,
+      };
+      return {
+        ...state,
+        editBase: base,
+        maskDraft: { detectedMaskUrl: null, buffer: undefined },
+      };
+    }
+
+    case "EDIT_BASE_UPLOADED":
+      // Memoize the fal URL of the current work image (parity with PHOTO_UPLOADED).
+      if (state.editBase === undefined) return state;
+      return { ...state, editBase: { ...state.editBase, url: action.url } };
+
+    case "EDIT_APPLIED":
+      // A retouch succeeded: the result becomes the new work image (fal-hosted,
+      // reused directly — no re-upload), the mask is reset to a blank shell, and
+      // the epoch bumps (a new attempt; any in-flight run is invalidated, AD-11).
+      // Dims are cleared → EditorSurface re-measures them (EDIT_BASE_MEASURED).
+      // No-op off the editor step (a late result must never yank another step).
+      if (state.step !== "editor") return state;
+      return {
+        ...state,
+        editBase: { url: action.image },
+        maskDraft: { detectedMaskUrl: null, buffer: undefined },
+        epoch: state.epoch + 1,
+        waitPhase: undefined,
+        error: undefined,
+      };
+
+    case "EDIT_BASE_MEASURED":
+      // Fill in the work image's real canonical dims once the <img> has loaded,
+      // so the next blank mask buffer matches 1:1 (AD-2/AD-7).
+      if (state.editBase === undefined) return state;
+      return {
+        ...state,
+        editBase: {
+          ...state.editBase,
+          width: action.width,
+          height: action.height,
+        },
       };
 
     case "RESET":

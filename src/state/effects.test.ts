@@ -5,6 +5,7 @@ const detect = vi.fn();
 const detectLocal = vi.fn();
 const inpaint = vi.fn();
 const autoEmptyRoom = vi.fn();
+const editRemove = vi.fn();
 const videoFn = vi.fn();
 const uploadArtifact = vi.fn();
 vi.mock("@/pipeline", () => ({
@@ -13,6 +14,7 @@ vi.mock("@/pipeline", () => ({
   detectLocal: (...a: unknown[]) => detectLocal(...a),
   inpaint: (...a: unknown[]) => inpaint(...a),
   autoEmptyRoom: (...a: unknown[]) => autoEmptyRoom(...a),
+  editRemove: (...a: unknown[]) => editRemove(...a),
   video: (...a: unknown[]) => videoFn(...a),
   uploadArtifact: (...a: unknown[]) => uploadArtifact(...a),
 }));
@@ -24,7 +26,7 @@ vi.mock("@/lib/mask-encode", () => ({
   encodeMaskPng: (...a: unknown[]) => encodeMaskPng(...a),
 }));
 
-import { runAutoEmptyRoom, runDetect, runInpaint, runValidateMask, runVideo } from "./effects";
+import { runAutoEmptyRoom, runDetect, runEdit, runInpaint, runValidateMask, runVideo } from "./effects";
 import type { Generation } from "./types";
 
 const paintedBuffer = { data: new Uint8Array([0, 255, 0, 0]), width: 2, height: 2 };
@@ -46,6 +48,7 @@ afterEach(() => {
   detect.mockReset();
   inpaint.mockReset();
   autoEmptyRoom.mockReset();
+  editRemove.mockReset();
   videoFn.mockReset();
   uploadArtifact.mockReset();
   encodeMaskPng.mockClear();
@@ -611,5 +614,133 @@ describe("runVideo (AD-12 FLF orchestration)", () => {
         error: expect.objectContaining({ step: "video" }),
       }),
     );
+  });
+});
+
+describe("runEdit (AD-12 free-edit remove, Story 5.3)", () => {
+  const paintedMask = { data: new Uint8Array([0, 255, 0, 0]), width: 2, height: 2 };
+
+  /** Editor state on the first retouch: work image is the uploaded blob (no url). */
+  function editState(overrides: Partial<Generation> = {}): Generation {
+    return {
+      step: "editor",
+      epoch: 1,
+      mode: "edit",
+      editBase: { blob: new Blob(["w"]), width: 1024, height: 768 },
+      maskDraft: { detectedMaskUrl: null, buffer: paintedMask },
+      ...overrides,
+    };
+  }
+
+  it("first retouch: uploads the work image, encodes+uploads the mask, then EDIT_APPLIED", async () => {
+    uploadArtifact
+      .mockResolvedValueOnce("https://fal/work.jpg") // work image
+      .mockResolvedValueOnce("https://fal/mask.png"); // mask png
+    editRemove.mockResolvedValue({ image: "https://fal/edited.png" });
+    const dispatch = vi.fn();
+
+    await runEdit(editState(), dispatch, { operation: "remove", signal, isStale: notStale });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "EDIT_BASE_UPLOADED",
+      url: "https://fal/work.jpg",
+    });
+    expect(editRemove).toHaveBeenCalledWith(
+      "https://fal/work.jpg",
+      "https://fal/mask.png",
+      expect.anything(),
+    );
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "EDIT_APPLIED",
+      image: "https://fal/edited.png",
+    });
+  });
+
+  it("subsequent retouch: reuses the fal URL of the previous result (no re-upload of the image)", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/mask.png"); // only the mask is uploaded
+    editRemove.mockResolvedValue({ image: "https://fal/edited2.png" });
+    const dispatch = vi.fn();
+    const state = editState({ editBase: { url: "https://fal/prev.png", width: 1195, height: 896 } });
+
+    await runEdit(state, dispatch, { operation: "remove", signal, isStale: notStale });
+
+    // uploadArtifact called once (mask only), never for the image.
+    expect(uploadArtifact).toHaveBeenCalledOnce();
+    expect(
+      dispatch.mock.calls.some((c) => c[0].type === "EDIT_BASE_UPLOADED"),
+    ).toBe(false);
+    expect(editRemove).toHaveBeenCalledWith(
+      "https://fal/prev.png",
+      "https://fal/mask.png",
+      expect.anything(),
+    );
+  });
+
+  it("is a no-op when the mask is empty or editBase is missing", async () => {
+    const dispatch = vi.fn();
+    await runEdit(editState({ maskDraft: { detectedMaskUrl: null, buffer: emptyBuffer } }), dispatch, {
+      operation: "remove",
+      signal,
+      isStale: notStale,
+    });
+    await runEdit(editState({ editBase: undefined }), dispatch, {
+      operation: "remove",
+      signal,
+      isStale: notStale,
+    });
+    expect(editRemove).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a failure as a retryable SET_ERROR of step edit", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/mask.png");
+    editRemove.mockRejectedValue(new Error("boom"));
+    const dispatch = vi.fn();
+    const state = editState({ editBase: { url: "https://fal/prev.png", width: 4, height: 4 } });
+
+    await runEdit(state, dispatch, { operation: "remove", signal, isStale: notStale });
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "SET_ERROR",
+        error: expect.objectContaining({ step: "edit" }),
+      }),
+    );
+  });
+
+  it("drops a result that goes stale mid-flight (no EDIT_APPLIED)", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/mask.png");
+    let stale = false;
+    editRemove.mockImplementation(() => {
+      stale = true;
+      return Promise.resolve({ image: "https://fal/edited.png" });
+    });
+    const dispatch = vi.fn();
+    const state = editState({ editBase: { url: "https://fal/prev.png", width: 4, height: 4 } });
+
+    await runEdit(state, dispatch, { operation: "remove", signal, isStale: () => stale });
+
+    expect(dispatch.mock.calls.some((c) => c[0].type === "EDIT_APPLIED")).toBe(false);
+  });
+
+  it("does not dispatch when the signal is aborted", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/mask.png");
+    editRemove.mockResolvedValue({ image: "https://fal/edited.png" });
+    const dispatch = vi.fn();
+    const aborted = new AbortController();
+    aborted.abort();
+    const state = editState({ editBase: { url: "https://fal/prev.png", width: 4, height: 4 } });
+
+    await runEdit(state, dispatch, {
+      operation: "remove",
+      signal: aborted.signal,
+      isStale: () => false,
+    });
+
+    expect(
+      dispatch.mock.calls.some(
+        (c) => c[0].type === "EDIT_APPLIED" || c[0].type === "SET_ERROR",
+      ),
+    ).toBe(false);
   });
 });

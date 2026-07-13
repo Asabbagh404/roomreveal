@@ -1,4 +1,4 @@
-import { DETECT_BACKEND, autoEmptyRoom, detect, detectLocal, inpaint, uploadArtifact, video } from "@/pipeline";
+import { DETECT_BACKEND, autoEmptyRoom, detect, detectLocal, editRemove, inpaint, uploadArtifact, video } from "@/pipeline";
 import { encodeMaskPng } from "@/lib/mask-encode";
 import { isBufferEmpty } from "@/lib/mask-buffer";
 import type { GenerationAction } from "./reducer";
@@ -156,6 +156,68 @@ export async function runAutoEmptyRoom(
     dispatch({
       type: "SET_ERROR",
       error: isStepError(err) ? err : makeStepError("inpaint", true),
+    });
+  }
+}
+
+/**
+ * Applies one free-edit retouch (AD-12, Story 5.3): encodes the drawn mask and
+ * erases (operation "remove", bria eraser) the masked region of the current work
+ * image, then stores the result as the new work image (EDIT_APPLIED). The work
+ * image is uploaded lazily on the first retouch (blob → EDIT_BASE_UPLOADED); a
+ * subsequent retouch reuses the fal URL of the previous result directly — no
+ * re-upload. A result is dropped without dispatch once the run is dead (epoch
+ * bumped by EDIT_APPLIED or signal aborted). Failures become a retryable
+ * SET_ERROR of step "edit" (AD-8) — retry is a fresh « Appliquer » click, not an
+ * entry effect. AR-LAYERS: the pipeline call lives here. (operation "add" arrives
+ * in Story 5.4.)
+ */
+export async function runEdit(
+  state: Generation,
+  dispatch: Dispatch,
+  // `operation` is "remove" for Story 5.3 (only branch). Story 5.4 widens the
+  // union to `"remove" | "add"` and adds `prompt` for the editAdd (flux fill) path.
+  { signal, isStale }: RunContext & { operation: "remove" },
+): Promise<void> {
+  const editBase = state.editBase;
+  const buffer = state.maskDraft?.buffer;
+  if (editBase === undefined || buffer === undefined || isBufferEmpty(buffer)) {
+    return;
+  }
+
+  const dead = () => signal.aborted || isStale();
+  const onPhase = (phase: WaitPhase) => {
+    if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase });
+  };
+
+  try {
+    // Upload the work image once, lazily. First retouch: the uploaded blob.
+    // Later retouches: editBase.url is the previous fal result — reused as-is.
+    let imageUrl = editBase.url;
+    if (imageUrl === undefined) {
+      if (editBase.blob === undefined) return; // nothing to upload/edit
+      if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase: "uploading" });
+      imageUrl = await uploadArtifact(editBase.blob);
+      if (dead()) return;
+      dispatch({ type: "EDIT_BASE_UPLOADED", url: imageUrl });
+    }
+
+    // Encode + upload the verbatim binary mask (AD-7), fresh each retouch.
+    const png = await encodeMaskPng(buffer);
+    if (dead()) return;
+    const maskUrl = await uploadArtifact(png);
+    if (dead()) return;
+
+    // operation === "remove" for Story 5.3; "add" (flux fill) lands in 5.4.
+    const result = await editRemove(imageUrl, maskUrl, { signal, onPhase });
+    if (dead()) return; // superseded or cancelled — drop the result
+
+    dispatch({ type: "EDIT_APPLIED", image: result.image });
+  } catch (err) {
+    if (dead()) return; // a cancelled/superseded run must not paint an error
+    dispatch({
+      type: "SET_ERROR",
+      error: isStepError(err) ? err : makeStepError("edit", true),
     });
   }
 }

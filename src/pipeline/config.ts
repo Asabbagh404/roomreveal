@@ -27,6 +27,8 @@ export const TIMEOUTS_MS = {
   inpaint: 60_000,
   emptyRoomAuto: 120_000,
   video: 360_000,
+  // Free-edit retouch (Story 5.3 remove = bria eraser; 5.4 add = flux fill).
+  edit: 90_000,
 } as const;
 
 /** Retain every fal object (uploads + generations) for 24 h (AD-9 / AR-EPHEMERAL). */

@@ -43,8 +43,9 @@ export const WAIT_PHASE_ORDER: readonly WaitPhase[] = [
   "finalizing",
 ] as const;
 
-/** Pipeline operation that can fail (AD-8) — distinct from the Parcours Step. */
-export type PipelineStep = "detect" | "inpaint" | "video";
+/** Pipeline operation that can fail (AD-8) — distinct from the Parcours Step.
+ * `edit` covers the free-edit retouch (remove/add) in edit mode (Story 5.3). */
+export type PipelineStep = "detect" | "inpaint" | "video" | "edit";
 
 /**
  * Single error taxonomy (AD-8). userMessage is French (glossary vocabulary);
@@ -64,6 +65,7 @@ export const PIPELINE_STEP_TO_PARCOURS: Record<PipelineStep, Step> = {
   detect: "mask",
   inpaint: "emptyRoom",
   video: "video",
+  edit: "editor",
 };
 
 /**
@@ -104,6 +106,20 @@ export interface MaskDraft {
 }
 
 /**
+ * The current working image in the free-edit mode (Story 5.3). Starts as the
+ * uploaded photo (blob + canonical dims); after each applied edit it becomes the
+ * fal-hosted result URL (no blob — already hosted, reused as the next input, so
+ * no re-upload). `width`/`height` are the canonical mask dims; they are cleared
+ * on each new result and re-measured from the image (EDIT_BASE_MEASURED).
+ */
+export interface EditBase {
+  url?: string;
+  blob?: Blob;
+  width?: number;
+  height?: number;
+}
+
+/**
  * The single Generation object held by the reducer (AD-3). The server holds no
  * state; loss on refresh is accepted. fal artifacts are referenced by URL.
  */
@@ -113,6 +129,8 @@ export interface Generation {
   step: Step;
   epoch: number;
   originalPhoto?: OriginalPhoto;
+  /** Free-edit working image (Story 5.3, edit mode only). */
+  editBase?: EditBase;
   maskDraft?: MaskDraft;
   mask?: string;
   emptyRoom?: string;
