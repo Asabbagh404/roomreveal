@@ -24,13 +24,15 @@ export const MODELS = {
   // but that generative behavior is exactly what ADDING an object wants. Swappable
   // (bench-ready vs bria/genfill). Mask white = where the described object goes.
   editAdd: "fal-ai/flux-pro/v1/fill",
-  // Masked inpaint + IP-Adapter (real texture image reference) + prompt for the
-  // free-edit « Modifier » (texture bank): regenerates the WHITE masked region
-  // constrained by an IP-Adapter reference image (the chosen texture) and the
-  // prompt, leaving the rest pixel-identical (mask-native locality). Swappable /
-  // bench-gated. Documented fallback: nano-banana-2/edit (maskless) + a
-  // highlighted-region guidance image, if the IP-Adapter `scale` proves fiddly.
-  editModify: "fal-ai/flux-general/image-to-image",
+  // Masked-inpaint endpoint (top-level `mask_url`, white = edited region) + an
+  // optional IP-Adapter texture reference + prompt for the free-edit « Modifier »
+  // (texture bank): regenerates the WHITE masked region — optionally constrained
+  // by an IP-Adapter reference image (the chosen texture) — per the prompt,
+  // leaving the rest pixel-identical. The top-level mask applies in ALL modes, so
+  // locality is mask-native in both texture and instruction-only recolor modes.
+  // Swappable / bench-gated. Documented fallback: nano-banana-2/edit (maskless) +
+  // a highlighted-region guidance image, if the IP-Adapter `scale` proves fiddly.
+  editModify: "fal-ai/flux-general/inpainting",
   // Point-prompt segmentation for click-to-select in the free editor (Story 5.6):
   // SAM's OTHER interface — a single click point → the mask of the object under it
   // (vs `detect`, which text-prompts the SAME family). Backend piloted by

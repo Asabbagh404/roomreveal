@@ -157,7 +157,6 @@ describe("editAdd adapter (Story 5.4, flux-pro/v1/fill)", () => {
 
 interface IpAdapterInput {
   image_url?: string;
-  mask_image_url?: string;
   scale?: number;
 }
 
@@ -173,7 +172,7 @@ describe("editModify adapter (texture bank)", () => {
     expect(result.image).toBe("https://fal/modified.png");
   });
 
-  it("references the texture via an ip-adapter carrying the mask when a textureUrl is given", async () => {
+  it("sends a top-level mask and references the texture via an ip-adapter when a textureUrl is given", async () => {
     subscribe.mockResolvedValue({ data: { images: [{ url: "u" }] } });
     await editModify(
       "https://fal/work.jpg",
@@ -183,18 +182,25 @@ describe("editModify adapter (texture bank)", () => {
     );
     const [, cfg] = subscribe.mock.calls[0] as [
       string,
-      { input: { image_url?: string; prompt?: string; ip_adapters?: IpAdapterInput[] } },
+      {
+        input: {
+          image_url?: string;
+          mask_url?: string;
+          prompt?: string;
+          ip_adapters?: IpAdapterInput[];
+        };
+      },
     ];
     expect(cfg.input.image_url).toBe("https://fal/work.jpg");
+    expect(cfg.input.mask_url).toBe("https://fal/mask.png");
     expect(cfg.input.prompt).toBe("plancher chêne");
     expect(cfg.input.ip_adapters).toBeDefined();
     const adapter = cfg.input.ip_adapters?.[0];
     expect(adapter?.image_url).toBe("https://fal/oak.jpg");
-    expect(adapter?.mask_image_url).toBe("https://fal/mask.png");
     expect(adapter?.scale).toBeTypeOf("number");
   });
 
-  it("omits the ip-adapter entirely when no textureUrl is given (instruction-only recolor)", async () => {
+  it("still sends the top-level mask but omits the ip-adapter when no textureUrl is given (instruction-only recolor)", async () => {
     subscribe.mockResolvedValue({ data: { images: [{ url: "u" }] } });
     await editModify(
       "https://fal/work.jpg",
@@ -204,9 +210,17 @@ describe("editModify adapter (texture bank)", () => {
     );
     const [, cfg] = subscribe.mock.calls[0] as [
       string,
-      { input: { image_url?: string; prompt?: string; ip_adapters?: IpAdapterInput[] } },
+      {
+        input: {
+          image_url?: string;
+          mask_url?: string;
+          prompt?: string;
+          ip_adapters?: IpAdapterInput[];
+        };
+      },
     ];
     expect(cfg.input.image_url).toBe("https://fal/work.jpg");
+    expect(cfg.input.mask_url).toBe("https://fal/mask.png");
     expect(cfg.input.prompt).toBe("repeindre en bleu");
     expect(cfg.input.ip_adapters).toBeUndefined();
   });

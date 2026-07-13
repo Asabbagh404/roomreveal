@@ -158,21 +158,23 @@ const IP_ADAPTER_IMAGE_ENCODER_PATH = "openai/clip-vit-large-patch14";
 
 /**
  * Free-edit MODIFY adapter (AD-5, AD-12, texture bank): re-renders the masked
- * (white) region of the working image with flux-general/image-to-image so it
- * takes on a chosen material/colour, leaving the rest intact, and returns the URL
- * of the result. Two modes, one endpoint:
- *  - texture chosen → an IP-Adapter references the texture image (its `image_url`)
- *    and carries the inpaint mask (`mask_image_url`, white = edited region) so the
- *    reference conditioning is confined to the masked area; `prompt` steers it.
+ * (white) region of the working image with flux-general/inpainting so it takes on
+ * a chosen material/colour, leaving the rest intact, and returns the URL of the
+ * result. The inpaint mask is a TOP-LEVEL `mask_url` (white = edited region) that
+ * applies in ALL modes, so locality is mask-native regardless of texture. Two
+ * modes, one endpoint:
+ *  - texture chosen → an optional IP-Adapter references the texture image (its
+ *    `image_url`) so the masked region pulls material/colour from the reference;
+ *    `prompt` steers it.
  *  - no texture (instruction-only recolor) → no `ip_adapters` at all; the composed
- *    `prompt` alone drives the change.
- * `ip_adapters` is therefore present ONLY when a texture is chosen. The endpoint's
- * only mask channel on this route is the IP-Adapter's `mask_image_url`; field
- * names + `scale` are calibrated live. Same skeleton as editAdd/editRemove;
- * flux-general returns an `images[]` array (read `images[0].url`), so it reuses
- * `EditAddRawOutput`. Documented fallback if the IP-Adapter `scale` proves fiddly:
- * nano-banana-2/edit (maskless) + a highlighted-region guidance image. @fal-ai/client
- * is reached only through ./client.
+ *    `prompt` (plus the top-level mask) alone drives the change.
+ * `ip_adapters` is therefore present ONLY when a texture is chosen — and it no
+ * longer carries its own mask (the mask is top-level now). `scale`/path fields are
+ * calibrated live. Same skeleton as editAdd/editRemove; flux-general returns an
+ * `images[]` array (read `images[0].url`), so it reuses `EditAddRawOutput`.
+ * Documented fallback if the IP-Adapter `scale` proves fiddly: nano-banana-2/edit
+ * (maskless) + a highlighted-region guidance image. @fal-ai/client is reached only
+ * through ./client.
  */
 export async function editModify(
   imageUrl: string,
@@ -197,15 +199,16 @@ export async function editModify(
     const run = fal.subscribe(MODELS.editModify, {
       input: {
         image_url: imageUrl,
+        // Top-level inpaint mask (white = edited region); applies in ALL modes.
+        mask_url: maskUrl,
         prompt,
-        // The texture reference + its mask only exist when the user picked a
-        // texture; instruction-only recolor omits ip_adapters (prompt-driven).
+        // The texture reference only exists when the user picked a texture;
+        // instruction-only recolor omits ip_adapters (prompt + mask drive it).
         ...(textureUrl
           ? {
               ip_adapters: [
                 {
                   image_url: textureUrl,
-                  mask_image_url: maskUrl,
                   scale: IP_ADAPTER_SCALE,
                   path: IP_ADAPTER_PATH,
                   image_encoder_path: IP_ADAPTER_IMAGE_ENCODER_PATH,

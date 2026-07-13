@@ -31,7 +31,7 @@ describe("pipeline config registry (AR-CONFIG / AR-PROXY)", () => {
   });
 
   it("registers the editModify model, timeout and allowlist entries", () => {
-    expect(MODELS.editModify).toBe("fal-ai/flux-general/image-to-image");
+    expect(MODELS.editModify).toBe("fal-ai/flux-general/inpainting");
     expect(TIMEOUTS_MS.editModify).toBeGreaterThan(0);
     expect(FAL_ALLOWED_ENDPOINTS).toContain(`${MODELS.editModify}`);
     expect(FAL_ALLOWED_ENDPOINTS).toContain(`${MODELS.editModify}/**`);
