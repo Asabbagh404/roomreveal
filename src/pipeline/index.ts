@@ -8,6 +8,7 @@ export { detectLocal } from "./detect-local";
 export { inpaint } from "./inpaint";
 export { autoEmptyRoom } from "./empty-room-auto";
 export { editRemove, editAdd, editModify } from "./edit";
+export { resolveTextureUrl } from "./texture-upload";
 export { pointSegment } from "./point-segment";
 export { pointSegmentLocal } from "./point-segment-local";
 export { video } from "./video";
