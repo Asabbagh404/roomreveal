@@ -177,3 +177,35 @@
     opacity: 0;
   }
 }
+
+/* Reveal: the whole mask silhouette pulses gold once when a selection lands, so
+   the just-segmented object visibly "lights up" — the engulfing pulse (5.6 AC3). */
+@keyframes select-overlay-reveal {
+  0% {
+    filter: drop-shadow(0 0 8px var(--color-or-lumineux)) brightness(1.7);
+    opacity: 0.9;
+  }
+  100% {
+    filter: drop-shadow(0 0 1.5px var(--color-masque-contour));
+    opacity: 0.45;
+  }
+}
+
+/* Retouch-in-progress feedback (Story 5.4): a Gemini-style light wave radiates
+   from the center of the masked zone while an edit is applied — replaces the
+   full-screen WaitPanel. A ring (clipped to the mask silhouette in JS) grows
+   from the zone's centroid to past its farthest edge, fading as it lands. */
+@keyframes mask-wave {
+  /* 1.2s per wave (validated in the playground with Anthony, 2026-07-13). */
+  0% {
+    transform: translate(-50%, -50%) scale(0.02);
+    opacity: 0.95;
+  }
+  70% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0;
+  }
+}

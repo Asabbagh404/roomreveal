@@ -129,4 +129,11 @@ describe("unionBuffers (Story 5.6 click-to-select)", () => {
     const b = createBlankBuffer(2, 2);
     expect(() => unionBuffers(a, b)).toThrow();
   });
+
+  it("union with a blank buffer is a no-op (all zeros stay zero)", () => {
+    const painted = paintStroke(createBlankBuffer(8, 8), [{ x: 4, y: 4 }], 4, "brush");
+    const blank = createBlankBuffer(8, 8);
+    const u = unionBuffers(painted, blank);
+    expect([...u.data]).toEqual([...painted.data]); // unchanged by the blank
+  });
 });

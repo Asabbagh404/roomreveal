@@ -44,7 +44,7 @@ export function MaskToolbar({
         {selectable && (
           <ToolButton
             active={tool === "select"}
-            label="Sélection au clic (S)"
+            label="Sélection : clic (objet) ou glisser (zone) (S)"
             onClick={() => onToolChange("select")}
           >
             <MousePointerClick className="size-4" aria-hidden />

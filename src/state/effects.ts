@@ -3,6 +3,10 @@ import type { EditResult } from "@/pipeline";
 import { encodeMaskPng } from "@/lib/mask-encode";
 import { isBufferEmpty } from "@/lib/mask-buffer";
 import { decodeMaskToBuffer } from "@/lib/mask-decode";
+// Box-select adapters (Story 5.7) imported separately to avoid touching the busy
+// primary @/pipeline import line above.
+import { boxSegment, boxSegmentLocal } from "@/pipeline";
+import type { SelectRegion } from "@/lib/mask-buffer";
 import type { GenerationAction } from "./reducer";
 import { isStepError, makeStepError } from "./step-error";
 import type { Generation, WaitPhase } from "./types";
@@ -267,22 +271,24 @@ export async function runEdit(
 }
 
 /**
- * Segments the object under a clicked point and unions it into the draft mask
- * (Story 5.6, AD-12). SAM point-prompt via `pointSegment` (fal) or
- * `pointSegmentLocal` (DETECT_BACKEND === "local") on the current work image,
+ * Segments an object and unions it into the draft mask (Story 5.6/5.7, AD-12).
+ * The `region` is either a `point` (SAM point-prompt → the salient object, often
+ * a sub-part) or a `box` drag (→ the whole object enclosed, the "select the
+ * cabinet not the drawer" fix). Routed to `pointSegment`/`boxSegment` (fal) or
+ * their `*Local` variants (DETECT_BACKEND === "local") on the current work image,
  * then decodes the returned mask to a canonical binary buffer and dispatches
- * UNION_MASK_BUFFER so the reducer ORs it into the LIVE draft (successive clicks
- * accumulate; a concurrent brush stroke is not clobbered). Only the canvas decode
- * lives here; the union runs in the pure reducer (AD-3). Deliberately does NOT
- * touch waitPhase: the editor shows its own
- * inline pulse loader, not the full-screen WaitPanel. Lazy work-image upload
- * mirrors runEdit. A result is dropped once the run is dead (aborted/stale).
- * Failure → retryable SET_ERROR("pointSegment") (AD-8). AR-LAYERS.
+ * UNION_MASK_BUFFER so the reducer ORs it into the LIVE draft (successive
+ * selections accumulate; a concurrent brush stroke is not clobbered). Only the
+ * canvas decode lives here; the union runs in the pure reducer (AD-3).
+ * Deliberately does NOT touch waitPhase: the editor shows its own inline pulse
+ * loader, not the full-screen WaitPanel. Lazy work-image upload mirrors runEdit.
+ * A result is dropped once the run is dead (aborted/stale). Failure → retryable
+ * SET_ERROR("pointSegment") (AD-8). AR-LAYERS.
  */
 export async function runPointSegment(
   state: Generation,
   dispatch: Dispatch,
-  { x, y, signal, isStale }: RunContext & { x: number; y: number },
+  { region, signal, isStale }: RunContext & { region: SelectRegion },
 ): Promise<void> {
   const editBase = state.editBase;
   if (editBase === undefined) return;
@@ -294,7 +300,6 @@ export async function runPointSegment(
   // Point-segment feedback is the editor's inline pulse, so phases are ignored
   // here (no SET_WAIT_PHASE → the full-screen WaitPanel never shows).
   const onPhase = () => {};
-  const point = { x, y };
 
   try {
     let result;
@@ -309,7 +314,10 @@ export async function runPointSegment(
         blob = await (await fetch(editBase.url, { signal })).blob();
         if (dead()) return;
       }
-      result = await pointSegmentLocal(blob, point, { signal, onPhase });
+      result =
+        region.kind === "box"
+          ? await boxSegmentLocal(blob, region, { signal, onPhase })
+          : await pointSegmentLocal(blob, region, { signal, onPhase });
     } else {
       // fal needs a fal URL — upload the work image once, lazily (like runEdit).
       let imageUrl = editBase.url;
@@ -319,7 +327,10 @@ export async function runPointSegment(
         if (dead()) return;
         dispatch({ type: "EDIT_BASE_UPLOADED", url: imageUrl });
       }
-      result = await pointSegment(imageUrl, point, { signal, onPhase });
+      result =
+        region.kind === "box"
+          ? await boxSegment(imageUrl, region, { signal, onPhase })
+          : await pointSegment(imageUrl, region, { signal, onPhase });
     }
     if (dead()) return; // superseded or cancelled — drop the result
 

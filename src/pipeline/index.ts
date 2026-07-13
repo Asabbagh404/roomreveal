@@ -11,8 +11,9 @@ export { editRemove, editAdd, editModify } from "./edit";
 export { resolveTextureUrl } from "./texture-upload";
 export { findTexture } from "./textures";
 export { buildModifyPrompt } from "./prompts";
-export { pointSegment } from "./point-segment";
-export { pointSegmentLocal } from "./point-segment-local";
+export { pointSegment, boxSegment } from "./point-segment";
+export type { SelectBox } from "./point-segment";
+export { pointSegmentLocal, boxSegmentLocal } from "./point-segment-local";
 export { video } from "./video";
 export { DETECT_BACKEND } from "./config";
 export type {

@@ -6,6 +6,7 @@ import {
   type MaskBuffer,
   type MaskTool,
   type Point,
+  type SelectRegion,
 } from "@/lib/mask-buffer";
 import { SelectPulse, type SelectPhase } from "@/components/select-pulse";
 import {
@@ -27,6 +28,9 @@ const OVERLAY_RGB = { r: 255, g: 46, b: 158 } as const;
 const DEFAULT_BRUSH = 32;
 /** Wheel zoom multiplier per notch. */
 const ZOOM_STEP = 1.15;
+/** Below this drag distance (viewport px) a select gesture counts as a click
+ * (point prompt) rather than a box drag (Story 5.7). */
+const SELECT_DRAG_THRESHOLD_PX = 6;
 
 interface MaskCanvasProps {
   /** Background image URL drawn under the mask overlay (photo in reveal mode,
@@ -48,11 +52,15 @@ interface MaskCanvasProps {
   /** Enables the click-to-select tool (Story 5.6, edit mode only). Reveal mode
    * leaves this false so the tool never appears. */
   selectable?: boolean;
-  /** Called with the clicked buffer point when the select tool is active. The
-   * host segments the object under it (SAM point-prompt) and unions the mask. */
-  onPointSelect?: (point: Point) => void;
+  /** Called with the select gesture (buffer coords) when the select tool is
+   * active: a `point` click (SAM point-prompt → salient object) or a `box` drag
+   * (→ the whole enclosed object). The host segments it and unions the mask. */
+  onSelect?: (region: SelectRegion) => void;
   /** True while the host's segmentation is in flight — drives the pulse loader. */
   selecting?: boolean;
+  /** True while a retouch is being applied — the pink mask zones pulse in place
+   * of a full-screen loader (edit mode, Story 5.4 polish). */
+  pulsing?: boolean;
 }
 
 /**
@@ -73,8 +81,9 @@ export function MaskCanvas({
   onCommit,
   backgroundAlt = "Votre photo",
   selectable = false,
-  onPointSelect,
+  onSelect,
   selecting = false,
+  pulsing = false,
 }: MaskCanvasProps) {
   // ---- UI-local editor state (lost on unmount per AD-13) ----
   const [tool, setTool] = useState<MaskTool>("brush");
@@ -82,6 +91,18 @@ export function MaskCanvas({
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<Point>({ x: 0, y: 0 });
   const [history, setHistory] = useState<History<MaskBuffer> | null>(null);
+
+  // ---- Retouch wave (Story 5.4): a snapshot of the mask silhouette (PNG data
+  // URL) clips the wave to the exact zone shape while applying, and the zone's
+  // bounding-box centroid/radius anchor the ring so it radiates from the center
+  // of the selection out to its farthest edge. cx/cy are % of the container;
+  // d is the ring diameter as % of the container width. ----
+  const [sweep, setSweep] = useState<{
+    mask: string;
+    cx: number;
+    cy: number;
+    d: number;
+  } | null>(null);
 
   // ---- Click-to-select pulse (Story 5.6) ----
   const [selectAnchor, setSelectAnchor] = useState<Point | null>(null);
@@ -103,16 +124,23 @@ export function MaskCanvas({
   const panRef = useRef(pan);
   const historyRef = useRef(history);
   const bufferRef = useRef(buffer);
-  const onPointSelectRef = useRef(onPointSelect);
+  const onSelectRef = useRef(onSelect);
   const selectableRef = useRef(selectable);
   const selectingRef = useRef(selecting);
+  // Box-drag (Story 5.7): drag start/current in both buffer + viewport-local
+  // coords; `selectDraggingRef` marks a drag in progress. The live rectangle is
+  // drawn via `selectBoxRef` (positioned imperatively, no re-render).
+  const selectDraggingRef = useRef(false);
+  const selectStartRef = useRef<{ buf: Point; sx: number; sy: number } | null>(null);
+  const selectCurRef = useRef<{ buf: Point; sx: number; sy: number } | null>(null);
+  const selectBoxRef = useRef<HTMLDivElement>(null);
   useEffect(() => void (toolRef.current = tool), [tool]);
   useEffect(() => void (brushRef.current = brushSize), [brushSize]);
   useEffect(() => void (zoomRef.current = zoom), [zoom]);
   useEffect(() => void (panRef.current = pan), [pan]);
   useEffect(() => void (historyRef.current = history), [history]);
   useEffect(() => void (bufferRef.current = buffer), [buffer]);
-  useEffect(() => void (onPointSelectRef.current = onPointSelect), [onPointSelect]);
+  useEffect(() => void (onSelectRef.current = onSelect), [onSelect]);
   useEffect(() => void (selectableRef.current = selectable), [selectable]);
   useEffect(() => void (selectingRef.current = selecting), [selecting]);
 
@@ -151,14 +179,86 @@ export function MaskCanvas({
     if (buffer !== undefined) drawOverlay(buffer);
   }, [buffer, drawOverlay]);
 
+  // ---- Capture the mask silhouette + geometry for the retouch wave ----
+  // While applying, snapshot the just-drawn overlay (a PNG whose alpha traces the
+  // zone) so the wave can be clipped to the exact shape, and scan the buffer for
+  // the zone's bounding box so the ring starts at its center and reaches its
+  // farthest edge. Re-captured if the zone changes mid-apply; cleared when the
+  // apply ends. toDataURL is guarded — a 2D-context-less canvas (jsdom) or a
+  // rare failure simply skips the effect.
+  useEffect(() => {
+    if (!pulsing || buffer === undefined) {
+      setSweep(null);
+      return;
+    }
+    const canvas = overlayRef.current;
+    if (canvas === null) return;
+    let mask: string;
+    try {
+      mask = canvas.toDataURL();
+    } catch {
+      setSweep(null);
+      return;
+    }
+    // Bounding box of the selected pixels (one O(n) pass, once per apply).
+    const { width: w, height: h, data } = buffer;
+    let minX = w,
+      minY = h,
+      maxX = -1,
+      maxY = -1;
+    for (let y = 0; y < h; y++) {
+      const row = y * w;
+      for (let x = 0; x < w; x++) {
+        if (data[row + x] === 255) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX === -1) {
+      setSweep(null); // empty mask — nothing to animate
+      return;
+    }
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    // Radius to the farthest bbox corner (display scale is uniform since the
+    // container preserves the buffer aspect, so a buffer-space circle stays
+    // circular on screen). +8% margin so the ring fully exits the zone.
+    const r =
+      Math.hypot(Math.max(cx - minX, maxX - cx), Math.max(cy - minY, maxY - cy)) *
+      1.08;
+    setSweep({
+      mask,
+      cx: (cx / w) * 100,
+      cy: (cy / h) * 100,
+      d: ((2 * r) / w) * 100,
+    });
+  }, [pulsing, buffer]);
+
   // ---- Resolve the select pulse when the host's segmentation settles ----
   useEffect(() => {
     const was = prevSelectingRef.current;
     prevSelectingRef.current = selecting;
-    if (!was || selecting) return; // only act on the true → false transition
-    // A changed buffer reference = the object was added (reveal); otherwise the
+    if (selecting) {
+      // Keep the success baseline current with any in-flight buffer change (an
+      // undo/redo during the roundtrip) so the reveal-vs-error test reflects
+      // ONLY the segmentation's own contribution, not an unrelated edit.
+      bufferAtSelectRef.current = buffer;
+      return;
+    }
+    if (!was) return; // was already idle — nothing settled
+    // A changed buffer reference = the object landed (reveal); otherwise the
     // call failed or was cancelled (a brief error blip).
     const landed = bufferAtSelectRef.current !== buffer;
+    // A landed click-selection is an undoable step: push it onto the local undo
+    // stack so Ctrl+Z / the ↶ button removes it (it arrived via the reducer's
+    // UNION_MASK_BUFFER, not commitBuffer, so it isn't recorded otherwise).
+    if (landed && buffer !== undefined) {
+      const h = historyRef.current;
+      if (h !== null) setHistory(pushH(h, buffer));
+    }
     setSelectPhase(landed ? "reveal" : "error");
     const t = setTimeout(
       () => {
@@ -169,6 +269,17 @@ export function MaskCanvas({
     );
     return () => clearTimeout(t);
   }, [selecting, buffer]);
+
+  // ---- Tool switch (event handler, not effect): changing tool clears any
+  // pending select-pulse visuals so a stale "pulsing" dot can't linger while the
+  // user paints. The brush cursor is restored by updateCursor on the next move.
+  const changeTool = useCallback((next: MaskTool) => {
+    setTool(next);
+    if (next !== "select") {
+      setSelectPhase("idle");
+      setSelectAnchor(null);
+    }
+  }, []);
 
   // ---- Commit / undo / redo (mirror the host via onCommit + local history) ----
   const commitBuffer = useCallback(
@@ -263,6 +374,9 @@ export function MaskCanvas({
       }
       const rect = el.getBoundingClientRect();
       if (rect.width === 0) return;
+      // Restore visibility when returning from select mode (hidden there) so the
+      // brush circle reappears on the first move without needing a re-enter.
+      cursor.style.opacity = "1";
       const scale = (rect.width / width) * zoomRef.current;
       const diameter = brushRef.current * scale;
       cursor.style.width = `${diameter}px`;
@@ -275,19 +389,34 @@ export function MaskCanvas({
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
-      // ---- Click-to-select (Story 5.6): a click segments the object, no paint.
+      // ---- Select tool (Story 5.6/5.7): start a select gesture (no paint). A
+      // release without drag → point prompt; a drag → box prompt. Resolved in
+      // endStroke; here we only record the start + arm the live rectangle.
       if (selectableRef.current && toolRef.current === "select") {
         if (selectingRef.current) return; // a segmentation is already in flight
         const p = toBufferPoint(e.clientX, e.clientY);
-        if (p === null) return;
         const el = viewportRef.current;
-        if (el !== null) {
-          const rect = el.getBoundingClientRect();
-          setSelectAnchor({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-          setSelectPhase("pulsing");
+        if (p === null || el === null) return;
+        const rect = el.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        // Keep receiving moves if the pointer leaves the element mid-drag.
+        try {
+          el.setPointerCapture(e.pointerId);
+        } catch {
+          /* capture unavailable — drag still works */
         }
-        bufferAtSelectRef.current = bufferRef.current;
-        onPointSelectRef.current?.(p);
+        selectDraggingRef.current = true;
+        selectStartRef.current = { buf: p, sx, sy };
+        selectCurRef.current = { buf: p, sx, sy };
+        const box = selectBoxRef.current;
+        if (box) {
+          box.style.opacity = "0"; // shown once the drag actually moves
+          box.style.left = `${sx}px`;
+          box.style.top = `${sy}px`;
+          box.style.width = "0px";
+          box.style.height = "0px";
+        }
         return;
       }
       if (bufferRef.current === undefined) return;
@@ -320,6 +449,26 @@ export function MaskCanvas({
   const onPointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       updateCursor(e.clientX, e.clientY);
+      // Select box drag (Story 5.7): grow the live rectangle from the start point.
+      if (selectDraggingRef.current && selectStartRef.current !== null) {
+        const el = viewportRef.current;
+        const p = toBufferPoint(e.clientX, e.clientY);
+        if (el === null || p === null) return;
+        const rect = el.getBoundingClientRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        selectCurRef.current = { buf: p, sx, sy };
+        const s = selectStartRef.current;
+        const box = selectBoxRef.current;
+        if (box) {
+          box.style.opacity = "1";
+          box.style.left = `${Math.min(s.sx, sx)}px`;
+          box.style.top = `${Math.min(s.sy, sy)}px`;
+          box.style.width = `${Math.abs(sx - s.sx)}px`;
+          box.style.height = `${Math.abs(sy - s.sy)}px`;
+        }
+        return;
+      }
       if (panningRef.current && panStartRef.current !== null) {
         const s = panStartRef.current;
         const nextPan = {
@@ -341,6 +490,33 @@ export function MaskCanvas({
   );
 
   const endStroke = useCallback(() => {
+    // Finalize a select gesture (Story 5.7): a small drag → point prompt, a real
+    // drag → box prompt (whole object). Emits ONE region to the host.
+    if (selectDraggingRef.current) {
+      selectDraggingRef.current = false;
+      const start = selectStartRef.current;
+      const cur = selectCurRef.current;
+      selectStartRef.current = null;
+      selectCurRef.current = null;
+      if (selectBoxRef.current) selectBoxRef.current.style.opacity = "0";
+      if (start === null || cur === null) return;
+      setSelectAnchor({ x: cur.sx, y: cur.sy });
+      setSelectPhase("pulsing");
+      bufferAtSelectRef.current = bufferRef.current;
+      const dragPx = Math.hypot(cur.sx - start.sx, cur.sy - start.sy);
+      const region: SelectRegion =
+        dragPx < SELECT_DRAG_THRESHOLD_PX
+          ? { kind: "point", x: start.buf.x, y: start.buf.y }
+          : {
+              kind: "box",
+              x0: start.buf.x,
+              y0: start.buf.y,
+              x1: cur.buf.x,
+              y1: cur.buf.y,
+            };
+      onSelectRef.current?.(region);
+      return;
+    }
     if (panningRef.current) {
       panningRef.current = false;
       panStartRef.current = null;
@@ -421,15 +597,15 @@ export function MaskCanvas({
       switch (e.key) {
         case "b":
         case "B":
-          setTool("brush");
+          changeTool("brush");
           break;
         case "e":
         case "E":
-          setTool("eraser");
+          changeTool("eraser");
           break;
         case "s":
         case "S":
-          if (selectableRef.current) setTool("select");
+          if (selectableRef.current) changeTool("select");
           break;
         case "[":
           setBrushSize((s) => stepBrush(s, -1));
@@ -459,7 +635,7 @@ export function MaskCanvas({
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", onBlur);
     };
-  }, [doUndo, doRedo]);
+  }, [doUndo, doRedo, changeTool]);
 
   const aspectRatio =
     width > 0 && height > 0 ? `${width} / ${height}` : undefined;
@@ -479,7 +655,10 @@ export function MaskCanvas({
           if (cursorRef.current) cursorRef.current.style.opacity = "0";
         }}
         onPointerEnter={() => {
-          if (cursorRef.current) cursorRef.current.style.opacity = "1";
+          // The brush circle is meaningless in select mode — keep it hidden.
+          if (cursorRef.current && toolRef.current !== "select") {
+            cursorRef.current.style.opacity = "1";
+          }
         }}
         onWheel={onWheel}
       >
@@ -499,8 +678,56 @@ export function MaskCanvas({
           <canvas
             ref={overlayRef}
             aria-label="Masque"
-            className="absolute inset-0 h-full w-full opacity-45 [filter:drop-shadow(0_0_1.5px_var(--color-masque-contour))]"
+            className={
+              "absolute inset-0 h-full w-full opacity-45 [filter:drop-shadow(0_0_1.5px_var(--color-masque-contour))]" +
+              // On reveal, the whole mask silhouette pulses gold once — the
+              // "engulfing" pulse over the just-selected object (Story 5.6 AC3).
+              (selectPhase === "reveal"
+                ? " [animation:select-overlay-reveal_0.55s_ease-out]"
+                : "")
+            }
           />
+          {/* Retouch-in-progress feedback (Story 5.4): a Gemini-style light wave
+              radiates from the CENTER of the selected zone out to its edges while
+              the edit runs — replaces the full-screen WaitPanel. A ring (radial
+              gradient) anchored at the zone's centroid scales up on a loop
+              (transform = GPU, reliable), clipped to the exact mask shape
+              (captured from the overlay canvas as an alpha mask). Two rings, one
+              half-period apart, keep the wave continuous. Purely decorative;
+              hidden when motion is reduced. */}
+          {pulsing && sweep !== null && (
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 overflow-hidden motion-reduce:hidden"
+              style={{
+                WebkitMaskImage: `url(${sweep.mask})`,
+                maskImage: `url(${sweep.mask})`,
+                WebkitMaskSize: "100% 100%",
+                maskSize: "100% 100%",
+                WebkitMaskRepeat: "no-repeat",
+                maskRepeat: "no-repeat",
+              }}
+            >
+              {[0, 1].map((i) => (
+                <div
+                  key={i}
+                  // `backwards` fill: during the 2nd ring's delay it must hold the
+                  // 0% frame (tiny, centered) — otherwise it renders as a static
+                  // full-size blob for the first 0.9s.
+                  className="absolute rounded-full [animation:mask-wave_1.2s_ease-out_infinite_backwards]"
+                  style={{
+                    left: `${sweep.cx}%`,
+                    top: `${sweep.cy}%`,
+                    width: `${sweep.d}%`,
+                    aspectRatio: "1",
+                    animationDelay: i === 1 ? "0.6s" : undefined,
+                    backgroundImage:
+                      "radial-gradient(circle, transparent 52%, var(--color-masque-contour) 62%, #ffffff 68%, var(--color-masque-contour) 74%, transparent 84%)",
+                  }}
+                />
+              ))}
+            </div>
+          )}
         </div>
         {/* Brush cursor: a circle at the tool size (UX-DR7). Positioned via ref
             to avoid a re-render on every mouse move. */}
@@ -508,6 +735,13 @@ export function MaskCanvas({
           ref={cursorRef}
           aria-hidden
           className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80 opacity-0 mix-blend-difference"
+        />
+        {/* Live selection rectangle drawn during a box drag (Story 5.7),
+            positioned imperatively via selectBoxRef (no re-render). */}
+        <div
+          ref={selectBoxRef}
+          aria-hidden
+          className="pointer-events-none absolute z-10 rounded-sm border-2 border-dashed border-or-lumineux bg-or-lumineux/10 opacity-0"
         />
         <SelectPulse anchor={selectAnchor} phase={selectPhase} />
       </div>

@@ -9,25 +9,70 @@ function urlOrNull(url: string | undefined): string | null {
   return typeof url === "string" && url.trim() !== "" ? url : null;
 }
 
+/** A rectangle in canonical buffer coords (raw drag corners, any order). */
+export interface SelectBox {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
 /**
- * Point-prompt segmentation adapter (AD-5, AD-12): SAM's interactive interface —
- * given ONE positive point on the image, return the mask of the object under it.
- * Structurally identical to `detect` (controller chained to the caller's signal,
- * timeout aborts the fal job and becomes a retryable StepError AD-8, queue
- * statuses → onPhase, 24 h retention AD-9). @fal-ai/client is reached only via
- * ./client.
+ * SAM segmentation adapter (AD-5, AD-12): SAM's interactive interface via the
+ * fal sam2/image endpoint. Two prompt shapes share one core:
+ * - `pointSegment` — ONE positive point → the salient object under it (often a
+ *   sub-part, e.g. a drawer).
+ * - `boxSegment` — a rectangle → the whole object enclosed by the box (the fix
+ *   for "clicked the drawer, got the drawer instead of the cabinet").
  *
- * The sam2/image schema is typed by @fal-ai/client (Sam2ImageInput / HEDOutput):
- * input `{ image_url, prompts: [{ x, y, label }] }` (label "1" = foreground) with
- * `apply_mask: false` so the output `image` is the clean binary mask rather than
- * the masked photo (same trick as `detect` with sam-3). Point coords are IMAGE
- * pixels; the caller passes canonical coords, which equal image pixels since the
- * work image is at canonical dims (AR-PIXELS). The output→contract mapping lives
- * in the single `composePointResult` below.
+ * Structurally identical to `detect` (controller chained to the caller's signal,
+ * timeout aborts the fal job → retryable StepError AD-8, queue statuses → onPhase,
+ * 24 h retention AD-9). @fal-ai/client is reached only via ./client. The schema is
+ * typed by @fal-ai/client (Sam2ImageInput / HEDOutput): `apply_mask:false` so the
+ * output `image` is the clean binary mask. Coords are IMAGE pixels = canonical
+ * (AR-PIXELS). Output→contract mapping lives in the single `composePointResult`.
  */
-export async function pointSegment(
+export function pointSegment(
   imageUrl: string,
   point: Point,
+  opts: AdapterOptions,
+): Promise<PointSegmentResult> {
+  return sam2Segment(
+    imageUrl,
+    {
+      prompts: [
+        { x: Math.round(point.x), y: Math.round(point.y), label: "1" },
+      ],
+    },
+    opts,
+  );
+}
+
+export function boxSegment(
+  imageUrl: string,
+  box: SelectBox,
+  opts: AdapterOptions,
+): Promise<PointSegmentResult> {
+  return sam2Segment(
+    imageUrl,
+    {
+      box_prompts: [
+        {
+          x_min: Math.round(Math.min(box.x0, box.x1)),
+          y_min: Math.round(Math.min(box.y0, box.y1)),
+          x_max: Math.round(Math.max(box.x0, box.x1)),
+          y_max: Math.round(Math.max(box.y0, box.y1)),
+        },
+      ],
+    },
+    opts,
+  );
+}
+
+/** Shared sam2/image call: `promptFields` is the point- or box-specific part. */
+async function sam2Segment(
+  imageUrl: string,
+  promptFields: Record<string, unknown>,
   { signal, onPhase }: AdapterOptions,
 ): Promise<PointSegmentResult> {
   const controller = new AbortController();
@@ -47,10 +92,7 @@ export async function pointSegment(
     const run = fal.subscribe(MODELS.pointSegment, {
       input: {
         image_url: imageUrl,
-        // One positive point (label "1" = foreground/include) at the click.
-        prompts: [
-          { x: Math.round(point.x), y: Math.round(point.y), label: "1" },
-        ],
+        ...promptFields,
         // Return the clean binary mask, not the photo with the mask applied.
         apply_mask: false,
         output_format: "png",

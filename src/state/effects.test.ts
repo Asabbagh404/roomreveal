@@ -13,6 +13,8 @@ const findTexture = vi.fn();
 const buildModifyPrompt = vi.fn();
 const pointSegment = vi.fn();
 const pointSegmentLocal = vi.fn();
+const boxSegment = vi.fn();
+const boxSegmentLocal = vi.fn();
 const videoFn = vi.fn();
 const uploadArtifact = vi.fn();
 vi.mock("@/pipeline", () => ({
@@ -29,6 +31,8 @@ vi.mock("@/pipeline", () => ({
   buildModifyPrompt: (...a: unknown[]) => buildModifyPrompt(...a),
   pointSegment: (...a: unknown[]) => pointSegment(...a),
   pointSegmentLocal: (...a: unknown[]) => pointSegmentLocal(...a),
+  boxSegment: (...a: unknown[]) => boxSegment(...a),
+  boxSegmentLocal: (...a: unknown[]) => boxSegmentLocal(...a),
   video: (...a: unknown[]) => videoFn(...a),
   uploadArtifact: (...a: unknown[]) => uploadArtifact(...a),
 }));
@@ -77,6 +81,8 @@ afterEach(() => {
   buildModifyPrompt.mockReset();
   pointSegment.mockReset();
   pointSegmentLocal.mockReset();
+  boxSegment.mockReset();
+  boxSegmentLocal.mockReset();
   videoFn.mockReset();
   uploadArtifact.mockReset();
   encodeMaskPng.mockClear();
@@ -964,11 +970,15 @@ describe("runPointSegment (AD-12 click-to-select, Story 5.6)", () => {
     decodeMaskToBuffer.mockResolvedValue(decoded);
     const dispatch = vi.fn();
 
-    await runPointSegment(segState(), dispatch, { x: 2, y: 3, signal, isStale: notStale });
+    await runPointSegment(segState(), dispatch, {
+      region: { kind: "point", x: 2, y: 3 },
+      signal,
+      isStale: notStale,
+    });
 
     expect(pointSegment).toHaveBeenCalledWith(
       "https://fal/work.png",
-      { x: 2, y: 3 },
+      { kind: "point", x: 2, y: 3 },
       expect.anything(),
     );
     expect(decodeMaskToBuffer).toHaveBeenCalledWith("https://fal/objmask.png", 4, 4);
@@ -986,7 +996,11 @@ describe("runPointSegment (AD-12 click-to-select, Story 5.6)", () => {
     decodeMaskToBuffer.mockResolvedValue(decoded);
     const dispatch = vi.fn();
 
-    await runPointSegment(segState(), dispatch, { x: 1, y: 1, signal, isStale: notStale });
+    await runPointSegment(segState(), dispatch, {
+      region: { kind: "point", x: 1, y: 1 },
+      signal,
+      isStale: notStale,
+    });
 
     expect(dispatch.mock.calls.some((c) => c[0].type === "SET_WAIT_PHASE")).toBe(false);
   });
@@ -998,20 +1012,48 @@ describe("runPointSegment (AD-12 click-to-select, Story 5.6)", () => {
     const dispatch = vi.fn();
 
     const state = segState({ editBase: { blob: new Blob(["w"]), width: 4, height: 4 } });
-    await runPointSegment(state, dispatch, { x: 1, y: 1, signal, isStale: notStale });
+    await runPointSegment(state, dispatch, {
+      region: { kind: "point", x: 1, y: 1 },
+      signal,
+      isStale: notStale,
+    });
 
     expect(uploadArtifact).toHaveBeenCalledOnce();
     expect(dispatch).toHaveBeenCalledWith({ type: "EDIT_BASE_UPLOADED", url: "https://fal/uploaded.png" });
-    expect(pointSegment).toHaveBeenCalledWith("https://fal/uploaded.png", { x: 1, y: 1 }, expect.anything());
+    expect(pointSegment).toHaveBeenCalledWith("https://fal/uploaded.png", { kind: "point", x: 1, y: 1 }, expect.anything());
+  });
+
+  it("routes a box region to boxSegment (whole-object select)", async () => {
+    boxSegment.mockResolvedValue({ mask: "https://fal/boxmask.png" });
+    decodeMaskToBuffer.mockResolvedValue(decoded);
+    const dispatch = vi.fn();
+
+    await runPointSegment(segState(), dispatch, {
+      region: { kind: "box", x0: 1, y0: 1, x1: 3, y1: 3 },
+      signal,
+      isStale: notStale,
+    });
+
+    expect(boxSegment).toHaveBeenCalledWith(
+      "https://fal/work.png",
+      { kind: "box", x0: 1, y0: 1, x1: 3, y1: 3 },
+      expect.anything(),
+    );
+    expect(pointSegment).not.toHaveBeenCalled();
+    expect(dispatch.mock.calls.some((c) => c[0].type === "UNION_MASK_BUFFER")).toBe(true);
   });
 
   it("is a no-op when editBase is missing or dims are not yet measured", async () => {
     const dispatch = vi.fn();
-    await runPointSegment(segState({ editBase: undefined }), dispatch, { x: 1, y: 1, signal, isStale: notStale });
+    await runPointSegment(segState({ editBase: undefined }), dispatch, {
+      region: { kind: "point", x: 1, y: 1 },
+      signal,
+      isStale: notStale,
+    });
     await runPointSegment(
       segState({ editBase: { url: "https://fal/work.png" } }),
       dispatch,
-      { x: 1, y: 1, signal, isStale: notStale },
+      { region: { kind: "point", x: 1, y: 1 }, signal, isStale: notStale },
     );
     expect(pointSegment).not.toHaveBeenCalled();
     expect(dispatch).not.toHaveBeenCalled();
@@ -1024,8 +1066,7 @@ describe("runPointSegment (AD-12 click-to-select, Story 5.6)", () => {
     let stale = false;
 
     const p = runPointSegment(segState(), dispatch, {
-      x: 1,
-      y: 1,
+      region: { kind: "point", x: 1, y: 1 },
       signal,
       isStale: () => stale,
     });
@@ -1043,8 +1084,7 @@ describe("runPointSegment (AD-12 click-to-select, Story 5.6)", () => {
     aborted.abort();
 
     await runPointSegment(segState(), dispatch, {
-      x: 1,
-      y: 1,
+      region: { kind: "point", x: 1, y: 1 },
       signal: aborted.signal,
       isStale: notStale,
     });
@@ -1060,7 +1100,11 @@ describe("runPointSegment (AD-12 click-to-select, Story 5.6)", () => {
     pointSegment.mockRejectedValue(new Error("boom"));
     const dispatch = vi.fn();
 
-    await runPointSegment(segState(), dispatch, { x: 1, y: 1, signal, isStale: notStale });
+    await runPointSegment(segState(), dispatch, {
+      region: { kind: "point", x: 1, y: 1 },
+      signal,
+      isStale: notStale,
+    });
 
     const err = dispatch.mock.calls.find((c) => c[0].type === "SET_ERROR");
     expect(err).toBeDefined();

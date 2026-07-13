@@ -145,21 +145,60 @@ def _segment_point(m: dict, image: Image.Image, x: int, y: int) -> np.ndarray:
     return masks[0, best].numpy().astype(bool)
 
 
+def _segment_box(
+    m: dict, image: Image.Image, x_min: int, y_min: int, x_max: int, y_max: int
+) -> np.ndarray:
+    """SAM with a single box prompt -> best mask as a bool array [H, W].
+
+    The box counterpart of _segment_point (Story 5.7): a rectangle around a piece
+    of furniture makes SAM return the WHOLE object, not a sub-part (the drawer).
+    """
+    inputs = m["sam_processor"](
+        image,
+        input_boxes=[[[x_min, y_min, x_max, y_max]]],  # (batch, n_boxes, 4)
+        return_tensors="pt",
+    ).to(DEVICE)
+    with torch.no_grad():
+        outputs = m["sam_model"](**inputs)
+    masks = m["sam_processor"].image_processor.post_process_masks(
+        outputs.pred_masks.cpu(),
+        inputs["original_sizes"].cpu(),
+        inputs["reshaped_input_sizes"].cpu(),
+    )[0]  # tensor [n_boxes, n_multimask, H, W]
+    scores = outputs.iou_scores.cpu()[0]  # [n_boxes, n_multimask]
+    best = int(torch.argmax(scores[0]))
+    return masks[0, best].numpy().astype(bool)
+
+
+def _mask_response(mask: np.ndarray) -> Response:
+    """Encode a bool mask as a binary PNG, or 204 when empty (FR-16 style)."""
+    if not mask.any():
+        return Response(status_code=204)
+    mask_img = Image.fromarray((mask * 255).astype(np.uint8), mode="L")
+    buf = io.BytesIO()
+    mask_img.save(buf, format="PNG")
+    return Response(content=buf.getvalue(), media_type="image/png")
+
+
 @app.post("/point")
 async def point(image: UploadFile = File(...), point: str = Form(...)) -> Response:
     """Segment the object under a clicked point (SAM point-prompt, Story 5.6)."""
     m = _ensure_models()
     coord = json.loads(point)
     pil = Image.open(io.BytesIO(await image.read())).convert("RGB")
+    return _mask_response(_segment_point(m, pil, int(coord["x"]), int(coord["y"])))
 
-    mask = _segment_point(m, pil, int(coord["x"]), int(coord["y"]))
-    if not mask.any():
-        return Response(status_code=204)  # nothing at that point
 
-    mask_img = Image.fromarray((mask * 255).astype(np.uint8), mode="L")
-    buf = io.BytesIO()
-    mask_img.save(buf, format="PNG")
-    return Response(content=buf.getvalue(), media_type="image/png")
+@app.post("/box")
+async def box(image: UploadFile = File(...), box: str = Form(...)) -> Response:
+    """Segment the whole object inside a drag box (SAM box-prompt, Story 5.7)."""
+    m = _ensure_models()
+    b = json.loads(box)
+    pil = Image.open(io.BytesIO(await image.read())).convert("RGB")
+    mask = _segment_box(
+        m, pil, int(b["x_min"]), int(b["y_min"]), int(b["x_max"]), int(b["y_max"])
+    )
+    return _mask_response(mask)
 
 
 @app.post("/detect")

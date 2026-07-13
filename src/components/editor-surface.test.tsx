@@ -136,3 +136,63 @@ describe("EditorSurface closure actions (Story 5.5)", () => {
     ).toBe(true);
   });
 });
+
+describe("EditorSurface « Modifier » operation (texture bank)", () => {
+  // A painted zone: any non-zero byte makes the buffer non-empty (isBufferEmpty).
+  function paintedState(overrides: Partial<Generation> = {}): Generation {
+    const data = new Uint8Array(16);
+    data[0] = 255;
+    return editorState({
+      maskDraft: { detectedMaskUrl: null, buffer: { data, width: 4, height: 4 } },
+      ...overrides,
+    });
+  }
+
+  it("shows the texture bar and instruction field only under « Modifier »", () => {
+    render(
+      <GenerationProvider initialState={editorState()}>
+        <EditorSurface />
+      </GenerationProvider>,
+    );
+    // Not visible under the default « Enlever ».
+    expect(screen.queryByRole("radiogroup", { name: /texture/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Modifier" }));
+    expect(screen.getByRole("radiogroup", { name: /texture/i })).toBeDefined();
+    expect(screen.getByLabelText("Modification à appliquer")).toBeDefined();
+
+    // Switching away hides them again.
+    fireEvent.click(screen.getByRole("button", { name: "Enlever" }));
+    expect(screen.queryByRole("radiogroup", { name: /texture/i })).toBeNull();
+  });
+
+  it("enables « Appliquer » when a texture is chosen (zone painted)", () => {
+    render(
+      <GenerationProvider initialState={paintedState()}>
+        <EditorSurface />
+      </GenerationProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Modifier" }));
+    const apply = screen.getByRole("button", { name: "Appliquer" });
+    // No texture and no instruction yet → disabled.
+    expect(apply.hasAttribute("disabled")).toBe(true);
+    // Choosing a texture is enough.
+    fireEvent.click(screen.getByRole("radio", { name: /bois/i }));
+    expect(apply.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("enables « Appliquer » with an instruction only, no texture (zone painted)", () => {
+    render(
+      <GenerationProvider initialState={paintedState()}>
+        <EditorSurface />
+      </GenerationProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Modifier" }));
+    const apply = screen.getByRole("button", { name: "Appliquer" });
+    expect(apply.hasAttribute("disabled")).toBe(true);
+    fireEvent.change(screen.getByLabelText("Modification à appliquer"), {
+      target: { value: "bleu marine" },
+    });
+    expect(apply.hasAttribute("disabled")).toBe(false);
+  });
+});

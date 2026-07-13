@@ -138,6 +138,38 @@ describe("generationReducer (pure, no mocks)", () => {
     );
   });
 
+  it("UNION_MASK_BUFFER ORs the incoming mask into the live buffer (Story 5.6)", () => {
+    const current = { data: new Uint8Array([255, 0, 0, 0]), width: 2, height: 2 };
+    const state: Generation = {
+      step: "editor",
+      epoch: 1,
+      maskDraft: { detectedMaskUrl: null, buffer: current },
+    };
+    const incoming = { data: new Uint8Array([0, 0, 255, 0]), width: 2, height: 2 };
+    const next = generationReducer(state, { type: "UNION_MASK_BUFFER", buffer: incoming });
+    // Union: pixel 0 from current, pixel 2 from incoming, both kept.
+    expect([...next.maskDraft!.buffer!.data]).toEqual([255, 0, 255, 0]);
+    expect(next.maskDraft).not.toBe(state.maskDraft); // immutable
+    expect(current.data[2]).toBe(0); // input untouched
+  });
+
+  it("UNION_MASK_BUFFER sets the incoming mask directly when no buffer exists yet", () => {
+    const state: Generation = {
+      step: "editor",
+      epoch: 1,
+      maskDraft: { detectedMaskUrl: null, buffer: undefined },
+    };
+    const incoming = { data: new Uint8Array([0, 255, 0, 0]), width: 2, height: 2 };
+    const next = generationReducer(state, { type: "UNION_MASK_BUFFER", buffer: incoming });
+    expect(next.maskDraft?.buffer).toBe(incoming);
+  });
+
+  it("UNION_MASK_BUFFER is a no-op before a draft exists", () => {
+    const state: Generation = { step: "editor", epoch: 1 };
+    const buffer = { data: new Uint8Array(4), width: 2, height: 2 };
+    expect(generationReducer(state, { type: "UNION_MASK_BUFFER", buffer })).toBe(state);
+  });
+
   it("MASK_VALIDATED stores the mask URL, advances to emptyRoom, preserves the draft (AD-13)", () => {
     const maskDraft = {
       detectedMaskUrl: "fal://d",

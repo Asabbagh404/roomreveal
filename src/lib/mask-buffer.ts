@@ -21,6 +21,17 @@ export type StrokeMode = "brush" | "eraser";
  * that segments an object (SAM point-prompt) and unions it into the buffer. */
 export type MaskTool = StrokeMode | "select";
 
+/**
+ * A selection gesture in the select tool, in canonical buffer coordinates
+ * (Story 5.6/5.7). `point` = a single click → SAM segments the salient object
+ * under it (often a sub-part like a drawer). `box` = a drag rectangle → SAM
+ * segments the whole object enclosed by the box (the fix for "clicked the drawer,
+ * got the drawer, not the cabinet"). Corners are raw drag start/end; the adapter
+ * normalises to min/max. */
+export type SelectRegion =
+  | { kind: "point"; x: number; y: number }
+  | { kind: "box"; x0: number; y0: number; x1: number; y1: number };
+
 export interface Point {
   x: number;
   y: number;

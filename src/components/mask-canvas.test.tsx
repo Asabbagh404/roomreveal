@@ -89,12 +89,12 @@ describe("MaskCanvas click-to-select (Story 5.6)", () => {
 
   it("shows the Sélection tool when selectable", () => {
     renderCanvas({ selectable: true });
-    expect(screen.getByRole("button", { name: /Sélection au clic/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /Sélection/ })).toBeDefined();
   });
 
-  it("in select mode a click emits onPointSelect (buffer point) and commits no stroke", () => {
+  it("in select mode a click (no drag) emits a point region and commits no stroke", () => {
     const onCommit = vi.fn();
-    const onPointSelect = vi.fn();
+    const onSelect = vi.fn();
     render(
       <MaskCanvas
         backgroundUrl="blob:bg"
@@ -104,25 +104,26 @@ describe("MaskCanvas click-to-select (Story 5.6)", () => {
         epoch={0}
         onCommit={onCommit}
         selectable
-        onPointSelect={onPointSelect}
+        onSelect={onSelect}
       />,
     );
-    // Activate the select tool.
-    fireEvent.click(screen.getByRole("button", { name: /Sélection au clic/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Sélection/ }));
     const overlay = screen.getByLabelText("Masque");
     const viewport = overlay.parentElement!.parentElement!;
     withRect(viewport);
+    // Down then up at the same spot → a click, not a drag → point region.
     fireEvent.pointerDown(viewport, { clientX: 512, clientY: 384, pointerId: 1 });
     fireEvent.pointerUp(viewport, { clientX: 512, clientY: 384, pointerId: 1 });
-    expect(onPointSelect).toHaveBeenCalledOnce();
-    const p = onPointSelect.mock.calls[0][0];
-    expect(p.x).toBeCloseTo(512);
-    expect(p.y).toBeCloseTo(384);
+    expect(onSelect).toHaveBeenCalledOnce();
+    const region = onSelect.mock.calls[0][0];
+    expect(region.kind).toBe("point");
+    expect(region.x).toBeCloseTo(512);
+    expect(region.y).toBeCloseTo(384);
     expect(onCommit).not.toHaveBeenCalled(); // select never paints
   });
 
-  it("ignores a second click while a segmentation is in flight (selecting)", () => {
-    const onPointSelect = vi.fn();
+  it("in select mode a drag emits a box region enclosing the dragged rectangle", () => {
+    const onSelect = vi.fn();
     render(
       <MaskCanvas
         backgroundUrl="blob:bg"
@@ -132,15 +133,84 @@ describe("MaskCanvas click-to-select (Story 5.6)", () => {
         epoch={0}
         onCommit={vi.fn()}
         selectable
-        onPointSelect={onPointSelect}
+        onSelect={onSelect}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Sélection/ }));
+    const overlay = screen.getByLabelText("Masque");
+    const viewport = overlay.parentElement!.parentElement!;
+    withRect(viewport);
+    // A real drag from (100,100) to (400,300) → box region.
+    fireEvent.pointerDown(viewport, { clientX: 100, clientY: 100, pointerId: 1 });
+    fireEvent.pointerMove(viewport, { clientX: 400, clientY: 300, pointerId: 1 });
+    fireEvent.pointerUp(viewport, { clientX: 400, clientY: 300, pointerId: 1 });
+    expect(onSelect).toHaveBeenCalledOnce();
+    const region = onSelect.mock.calls[0][0];
+    expect(region.kind).toBe("box");
+    expect(region.x0).toBeCloseTo(100);
+    expect(region.y0).toBeCloseTo(100);
+    expect(region.x1).toBeCloseTo(400);
+    expect(region.y1).toBeCloseTo(300);
+  });
+
+  it("records a landed selection as an undoable step (↶ removes it)", () => {
+    const onCommit = vi.fn();
+    const b0 = createBlankBuffer(4, 4);
+    const b1 = { data: new Uint8Array(16).fill(255), width: 4, height: 4 };
+    const { rerender } = render(
+      <MaskCanvas
+        backgroundUrl="blob:bg"
+        width={4}
+        height={4}
+        buffer={b0}
+        epoch={0}
+        onCommit={onCommit}
+        selectable
+        onSelect={vi.fn()}
+        selecting={false}
+      />,
+    );
+    // Undo is disabled with only the seed in history.
+    const undo = screen.getByRole("button", { name: /Annuler/ });
+    expect(undo.hasAttribute("disabled")).toBe(true);
+
+    // Segmentation in flight, then it lands with a new (unioned) buffer.
+    rerender(
+      <MaskCanvas backgroundUrl="blob:bg" width={4} height={4} buffer={b0} epoch={0} onCommit={onCommit} selectable onSelect={vi.fn()} selecting />,
+    );
+    rerender(
+      <MaskCanvas backgroundUrl="blob:bg" width={4} height={4} buffer={b1} epoch={0} onCommit={onCommit} selectable onSelect={vi.fn()} selecting={false} />,
+    );
+
+    // The landed selection is now an undoable step.
+    expect(undo.hasAttribute("disabled")).toBe(false);
+    onCommit.mockClear();
+    fireEvent.click(undo);
+    // Undo reverts to the pre-selection buffer, removing the selection.
+    expect(onCommit).toHaveBeenCalledWith(b0);
+  });
+
+  it("ignores a second gesture while a segmentation is in flight (selecting)", () => {
+    const onSelect = vi.fn();
+    render(
+      <MaskCanvas
+        backgroundUrl="blob:bg"
+        width={1024}
+        height={768}
+        buffer={createBlankBuffer(1024, 768)}
+        epoch={0}
+        onCommit={vi.fn()}
+        selectable
+        onSelect={onSelect}
         selecting
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /Sélection au clic/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Sélection/ }));
     const overlay = screen.getByLabelText("Masque");
     const viewport = overlay.parentElement!.parentElement!;
     withRect(viewport);
     fireEvent.pointerDown(viewport, { clientX: 512, clientY: 384, pointerId: 1 });
-    expect(onPointSelect).not.toHaveBeenCalled();
+    fireEvent.pointerUp(viewport, { clientX: 512, clientY: 384, pointerId: 1 });
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

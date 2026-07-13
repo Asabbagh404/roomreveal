@@ -10,6 +10,7 @@ import {
   STEP_ORDER,
   WAIT_PHASE_ORDER,
 } from "./types";
+import { unionBuffers } from "@/lib/mask-buffer";
 
 /** Initial Generation: at Upload, epoch 0, no artifacts (AD-3). */
 export const initialGeneration: Generation = {
@@ -30,6 +31,7 @@ export type GenerationAction =
   | { type: "DETECTION_UPLOADED"; falUrl: string }
   | { type: "DETECT_SUCCEEDED"; detectedMaskUrl: string | null }
   | { type: "SET_MASK_BUFFER"; buffer: MaskBuffer }
+  | { type: "UNION_MASK_BUFFER"; buffer: MaskBuffer }
   | { type: "MASK_VALIDATED"; maskUrl: string }
   | { type: "INPAINT_SUCCEEDED"; emptyRoomUrl: string }
   | { type: "REGENERATE_EMPTY_ROOM" }
@@ -153,6 +155,22 @@ export function generationReducer(
         ...state,
         maskDraft: { ...state.maskDraft, buffer: action.buffer },
       };
+
+    case "UNION_MASK_BUFFER": {
+      // Click-to-select (Story 5.6): OR the freshly segmented object mask into
+      // the CURRENT draft buffer. The union runs HERE (not in the effect) so it
+      // reads the live buffer at dispatch time — a brush stroke committed during
+      // the async segmentation is preserved, not clobbered by a stale snapshot.
+      // The effect only decodes the mask (canvas); the reducer stays pure (AD-3),
+      // immutable (AD-13). Ignored if no draft exists yet.
+      if (state.maskDraft === undefined) return state;
+      const current = state.maskDraft.buffer;
+      const next =
+        current !== undefined
+          ? unionBuffers(current, action.buffer)
+          : action.buffer;
+      return { ...state, maskDraft: { ...state.maskDraft, buffer: next } };
+    }
 
     case "MASK_VALIDATED":
       // Ignore a validation that resolves after the user already left the mask

@@ -8,7 +8,7 @@ vi.mock("./client", () => ({
   uploadArtifact: vi.fn(),
 }));
 
-import { pointSegment } from "./point-segment";
+import { pointSegment, boxSegment } from "./point-segment";
 
 const opts = { signal: new AbortController().signal, onPhase: vi.fn() };
 const point = { x: 12, y: 34 };
@@ -73,6 +73,20 @@ describe("pointSegment adapter (Story 5.6, SAM point-prompt)", () => {
       step: "pointSegment",
       retryable: true,
     });
+  });
+
+  it("boxSegment sends a normalised box_prompts rectangle (whole-object select)", async () => {
+    subscribe.mockResolvedValue({ data: { image: { url: "https://fal/box.png" } } });
+    // Corners given out of order → adapter must normalise to min/max + round.
+    const result = await boxSegment("https://fal/work.png", { x0: 400.6, y0: 300.2, x1: 100.4, y1: 80.9 }, opts);
+    expect(result.mask).toBe("https://fal/box.png");
+    const [, cfg] = subscribe.mock.calls[0] as [
+      string,
+      { input: Record<string, unknown> },
+    ];
+    expect(cfg.input.box_prompts).toEqual([{ x_min: 100, y_min: 81, x_max: 401, y_max: 300 }]);
+    expect(cfg.input.prompts).toBeUndefined();
+    expect(cfg.input.apply_mask).toBe(false);
   });
 
   it("requests 24 h object retention (AD-9)", async () => {
