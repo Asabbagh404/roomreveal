@@ -148,12 +148,16 @@ export async function editAdd(
 const IP_ADAPTER_SCALE = 0.7;
 
 /**
- * Hugging Face path + image encoder for the flux IP-Adapter, per the fal
- * flux-general endpoint's documented defaults (XLabs flux-ip-adapter). Sent so
- * the endpoint's required IPAdapter fields type-check; both are calibrate-live
- * (a different adapter/encoder may bench better).
+ * Hugging Face repo + weights file + image encoder for the flux IP-Adapter
+ * (XLabs-AI/flux-ip-adapter v1). `weight_name` is REQUIRED at runtime: without
+ * it fal's loader hits `'NoneType' object has no attribute 'split'` and returns
+ * 422 (it splits the filename to pick the loader) — `path` alone is not enough.
+ * `ip_adapter.safetensors` is the actual (only) weights file in that repo;
+ * CLIP ViT-L/14 is the v1 image encoder. Swap all three together if benching a
+ * different adapter (e.g. flux-ip-adapter-v2 uses a different encoder).
  */
 const IP_ADAPTER_PATH = "XLabs-AI/flux-ip-adapter";
+const IP_ADAPTER_WEIGHT_NAME = "ip_adapter.safetensors";
 const IP_ADAPTER_IMAGE_ENCODER_PATH = "openai/clip-vit-large-patch14";
 
 /**
@@ -211,6 +215,7 @@ export async function editModify(
                   image_url: textureUrl,
                   scale: IP_ADAPTER_SCALE,
                   path: IP_ADAPTER_PATH,
+                  weight_name: IP_ADAPTER_WEIGHT_NAME,
                   image_encoder_path: IP_ADAPTER_IMAGE_ENCODER_PATH,
                 },
               ],

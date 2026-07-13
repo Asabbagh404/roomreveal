@@ -158,6 +158,9 @@ describe("editAdd adapter (Story 5.4, flux-pro/v1/fill)", () => {
 interface IpAdapterInput {
   image_url?: string;
   scale?: number;
+  path?: string;
+  weight_name?: string;
+  image_encoder_path?: string;
 }
 
 describe("editModify adapter (texture bank)", () => {
@@ -198,6 +201,12 @@ describe("editModify adapter (texture bank)", () => {
     const adapter = cfg.input.ip_adapters?.[0];
     expect(adapter?.image_url).toBe("https://fal/oak.jpg");
     expect(adapter?.scale).toBeTypeOf("number");
+    // Regression guard for the 422 root cause: fal's IP-Adapter loader needs the
+    // weights filename (path alone → `'NoneType'.split` → 422). weight_name +
+    // path + image_encoder_path must all be present.
+    expect(adapter?.path).toBe("XLabs-AI/flux-ip-adapter");
+    expect(adapter?.weight_name).toBe("ip_adapter.safetensors");
+    expect(adapter?.image_encoder_path).toBe("openai/clip-vit-large-patch14");
   });
 
   it("still sends the top-level mask but omits the ip-adapter when no textureUrl is given (instruction-only recolor)", async () => {
