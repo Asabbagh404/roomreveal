@@ -128,7 +128,8 @@ claude-opus-4-8 (1M context)
 ### Change Log
 
 - 2026-07-13 : Story 5.1 créée (create-story). Ossature du mode édition : axe `mode`, `SELECT_MODE`, `PHOTO_NORMALIZED` mode-aware (reveal→mask / edit→editor), `RESET` préserve le mode, `HomeScene`, routage `ParcoursScene`, `Stepper` adaptatif, placeholder `EditorSurface` (remplacé en 5.3). Statut → ready-for-dev.
-- 2026-07-13 : Story 5.1 implémentée en TDD (5 tasks) + revue adverse 3 couches. 167 tests → **173** après correctifs. tsc/lint/build verts. 4 correctifs appliqués (voir revue). Statut → review → **done**.
+- 2026-07-13 : Story 5.1 implémentée en TDD (5 tasks) + revue adverse 3 couches. 167 tests → **173** après correctifs. tsc/lint/build verts. 4 correctifs appliqués (voir revue). Statut → review → **done**. Commit a53d335.
+- 2026-07-13 : **Live-verify (Playwright, serveur :3000)**. Accueil = header « RoomReveal » (pas de stepper 4/4) + titre « Que voulez-vous créer ? » + 2 cartes. Clic « Éditer une image » → mode edit : stepper bascule sur « Photo → Édition » (Photo en cours/or), zone d'upload partagée affichée. **0 erreur console.** Reveal inchangé (couvert par tests). (Note : l'onglet préexistant bloquait via beforeunload — la garde UX-DR15 en action ; vérif faite sur un onglet neuf.)
 
 ## Senior Developer Review (AI)
 
