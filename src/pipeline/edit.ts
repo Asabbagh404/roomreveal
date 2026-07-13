@@ -1,6 +1,13 @@
-import { makeStepError } from "@/state/step-error";
+import { isStepError, makeStepError } from "@/state/step-error";
+import { decodeMaskToBuffer } from "@/lib/mask-decode";
+import {
+  compositeWithinMask,
+  cropRegion,
+  imageSize,
+  maskBoundingBox,
+} from "@/lib/retexture-region";
 import { ARTIFACT_EXPIRES_IN_SECONDS, MODELS, TIMEOUTS_MS } from "./config";
-import { fal } from "./client";
+import { fal, uploadArtifact } from "./client";
 import type { AdapterOptions, EditResult } from "./types";
 
 /**
@@ -140,32 +147,20 @@ export async function editAdd(
 }
 
 /**
- * Free-edit MODIFY adapter (AD-5, AD-12, texture bank): re-renders the working
- * image with the in-context editor `flux-pro/kontext/multi` so a chosen object
- * takes on an EXACT reference texture, and returns the URL of the result. Kontext
- * is an instruction-driven multi-image editor — it applies the material shown in
- * the SECOND image onto the target in the FIRST, which transfers a real swatch far
- * better than an IP-Adapter (which only conditions global style — benched weak,
- * 2026-07-14). Two modes, one endpoint:
- *  - texture chosen → `image_urls: [workingImage, textureImage]`; the prompt tells
- *    Kontext to apply the second image's material to the target object.
- *  - no texture (instruction-only recolor) → `image_urls: [workingImage]`; the
- *    prompt alone drives the change.
- * Kontext is MASKLESS: locality is steered by the prompt ("keep everything else
- * identical"), not a mask. `maskUrl` is therefore currently UNUSED here — it is
- * kept in the signature so the effect layer's call is unchanged and reserved for a
- * future v2 (client-side recompositing of the result within the mask for strict
- * locality). Kontext returns an `images[]` array (read `images[0].url`), so it
- * reuses `EditAddRawOutput`. Same abort/timeout/queue/retention skeleton as
- * editAdd/editRemove. @fal-ai/client is reached only through ./client.
+ * Thin Kontext call: runs `flux-pro/kontext/multi` on the given `image_urls`
+ * (in-context multi-image editor) and returns the first result URL. When two URLs
+ * are passed, the SECOND is the material reference the prompt refers to. Same
+ * abort/timeout/queue/retention skeleton as the other adapters; returns the URL
+ * (not an EditResult) because editModify wraps it in a crop→composite flow.
+ * Throws a retryable edit StepError on timeout/abort/empty. @fal-ai/client only
+ * via ./client. Exported for unit tests (the fal wire contract); editModify's
+ * canvas orchestration around it is browser-only / live-verified.
  */
-export async function editModify(
-  imageUrl: string,
-  maskUrl: string,
-  { textureUrl, prompt }: { textureUrl?: string; prompt: string },
+export async function runKontext(
+  imageUrls: string[],
+  prompt: string,
   { signal, onPhase }: AdapterOptions,
-): Promise<EditResult> {
-  void maskUrl; // reserved for a future mask-recompositing pass (see JSDoc).
+): Promise<string> {
   const controller = new AbortController();
   const onExternalAbort = () => controller.abort();
   signal.addEventListener("abort", onExternalAbort);
@@ -181,13 +176,7 @@ export async function editModify(
 
   try {
     const run = fal.subscribe(MODELS.editModify, {
-      input: {
-        // Kontext multi-image: [working image, texture reference]. The texture is
-        // the SECOND image — the prompt refers to it. Instruction-only modify (no
-        // texture) sends just the working image.
-        image_urls: textureUrl ? [imageUrl, textureUrl] : [imageUrl],
-        prompt,
-      },
+      input: { image_urls: imageUrls, prompt },
       abortSignal: controller.signal,
       headers: {
         "x-fal-object-lifecycle-preference": JSON.stringify({
@@ -210,12 +199,70 @@ export async function editModify(
     if (typeof url !== "string" || url.trim() === "") {
       throw makeStepError("edit", true);
     }
-    return { image: url };
+    return url;
   } catch {
     throw makeStepError("edit", true);
   } finally {
     if (timeout !== undefined) clearTimeout(timeout);
     signal.removeEventListener("abort", onExternalAbort);
+  }
+}
+
+/**
+ * Free-edit MODIFY adapter (AD-5, AD-12, texture bank): applies an EXACT reference
+ * texture (or a text instruction) to ONLY the user-selected object of the working
+ * image, and returns the URL of the composited result. Kontext transfers a real
+ * swatch far better than an IP-Adapter (benched weak, 2026-07-14) but is MASKLESS —
+ * given the whole room it retextures the wrong surface (it put wood on the floor,
+ * live 2026-07-14). So this bridges "exact texture" (needs a reference image →
+ * Kontext) and "only my selection" (needs a mask → no fal model does both) with a
+ * crop→edit→composite flow, all client-side from `imageUrl` + `maskUrl`:
+ *   1. decode the mask to its bounding box (the selected object);
+ *   2. CROP the working image to that box → Kontext only sees the object, so it
+ *      can't wander onto the floor/walls;
+ *   3. runKontext([crop, texture?], prompt) retextures just the crop;
+ *   4. COMPOSITE the result back into the working image, gated by the mask, so only
+ *      the selected pixels change (strict locality) — output at the working dims.
+ * `image_urls[1]` (texture) is present only when a texture is chosen; an
+ * instruction-only recolor sends just the crop. Every failure ⇒ retryable edit
+ * StepError (AD-8). @fal-ai/client is reached only through ./client.
+ */
+export async function editModify(
+  imageUrl: string,
+  maskUrl: string,
+  { textureUrl, prompt }: { textureUrl?: string; prompt: string },
+  { signal, onPhase }: AdapterOptions,
+): Promise<EditResult> {
+  try {
+    // The mask PNG is at the working image's canonical dims (AD-7); decode it back
+    // to a buffer to find the selected object's bounding box.
+    const { width, height } = await imageSize(imageUrl);
+    if (signal.aborted) throw makeStepError("edit", true);
+    const buffer = await decodeMaskToBuffer(maskUrl, width, height);
+    const box = maskBoundingBox(buffer);
+    if (box === null) throw makeStepError("edit", true); // empty selection
+
+    // Crop to the selection so Kontext only ever sees the target object.
+    const cropBlob = await cropRegion(imageUrl, box);
+    if (signal.aborted) throw makeStepError("edit", true);
+    const cropUrl = await uploadArtifact(cropBlob);
+    if (signal.aborted) throw makeStepError("edit", true);
+
+    // Retexture the crop. Texture (if any) is the second image the prompt names.
+    const imageUrls = textureUrl ? [cropUrl, textureUrl] : [cropUrl];
+    const retexturedUrl = await runKontext(imageUrls, prompt, { signal, onPhase });
+    if (signal.aborted) throw makeStepError("edit", true);
+
+    // Paste the retextured object back, clipped to the mask → only the selection
+    // changes; the rest stays pixel-identical to the working image.
+    const finalBlob = await compositeWithinMask(imageUrl, retexturedUrl, buffer, box);
+    if (signal.aborted) throw makeStepError("edit", true);
+    const finalUrl = await uploadArtifact(finalBlob);
+    return { image: finalUrl };
+  } catch (err) {
+    // Never surface a native fal/canvas error (AD-8) — a retryable edit StepError
+    // (runKontext already throws this shape; wrap anything else).
+    throw isStepError(err) ? err : makeStepError("edit", true);
   }
 }
 

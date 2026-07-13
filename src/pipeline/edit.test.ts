@@ -8,7 +8,7 @@ vi.mock("./client", () => ({
   uploadArtifact: vi.fn(),
 }));
 
-import { editAdd, editModify, editRemove } from "./edit";
+import { editAdd, editRemove, runKontext } from "./edit";
 
 const opts = { signal: new AbortController().signal, onPhase: vi.fn() };
 
@@ -160,42 +160,34 @@ interface KontextInput {
   prompt?: string;
 }
 
-describe("editModify adapter (texture bank, Kontext multi-image)", () => {
+// The fal wire contract of « Modifier » lives in runKontext (the thin adapter).
+// editModify wraps it in a crop→composite flow that is browser-only (canvas +
+// fetch) and jsdom-unsupported — that path is live-verified, and its pure core
+// (maskBoundingBox) is unit-tested in src/lib/retexture-region.test.ts.
+describe("runKontext (Modifier fal call, Kontext multi-image)", () => {
   it("returns the first generated image URL (Kontext returns an images[] array)", async () => {
     subscribe.mockResolvedValue({ data: { images: [{ url: "https://fal/modified.png" }] } });
-    const result = await editModify(
-      "https://fal/work.jpg",
-      "https://fal/mask.png",
-      { textureUrl: "https://fal/oak.jpg", prompt: "plancher chêne" },
+    const url = await runKontext(
+      ["https://fal/crop.jpg", "https://fal/oak.jpg"],
+      "plancher chêne",
       opts,
     );
-    expect(result.image).toBe("https://fal/modified.png");
+    expect(url).toBe("https://fal/modified.png");
   });
 
-  it("sends image_urls [workingImage, textureImage] when a textureUrl is given", async () => {
+  it("sends the given image_urls (texture reference second) and prompt", async () => {
     subscribe.mockResolvedValue({ data: { images: [{ url: "u" }] } });
-    await editModify(
-      "https://fal/work.jpg",
-      "https://fal/mask.png",
-      { textureUrl: "https://fal/oak.jpg", prompt: "plancher chêne" },
-      opts,
-    );
+    await runKontext(["https://fal/crop.jpg", "https://fal/oak.jpg"], "plancher chêne", opts);
     const [, cfg] = subscribe.mock.calls[0] as [string, { input: KontextInput }];
-    // Working image first, texture reference second (the prompt refers to it).
-    expect(cfg.input.image_urls).toEqual(["https://fal/work.jpg", "https://fal/oak.jpg"]);
+    expect(cfg.input.image_urls).toEqual(["https://fal/crop.jpg", "https://fal/oak.jpg"]);
     expect(cfg.input.prompt).toBe("plancher chêne");
   });
 
-  it("sends only the working image (no texture) for an instruction-only recolor", async () => {
+  it("passes a single image for an instruction-only recolor (no texture)", async () => {
     subscribe.mockResolvedValue({ data: { images: [{ url: "u" }] } });
-    await editModify(
-      "https://fal/work.jpg",
-      "https://fal/mask.png",
-      { prompt: "repeindre en bleu" },
-      opts,
-    );
+    await runKontext(["https://fal/crop.jpg"], "repeindre en bleu", opts);
     const [, cfg] = subscribe.mock.calls[0] as [string, { input: KontextInput }];
-    expect(cfg.input.image_urls).toEqual(["https://fal/work.jpg"]);
+    expect(cfg.input.image_urls).toEqual(["https://fal/crop.jpg"]);
     expect(cfg.input.prompt).toBe("repeindre en bleu");
   });
 
@@ -209,12 +201,7 @@ describe("editModify adapter (texture bank, Kontext multi-image)", () => {
         return Promise.resolve({ data: { images: [{ url: "u" }] } });
       },
     );
-    await editModify(
-      "https://fal/work.jpg",
-      "https://fal/mask.png",
-      { textureUrl: "https://fal/oak.jpg", prompt: "x" },
-      { ...opts, onPhase },
-    );
+    await runKontext(["https://fal/crop.jpg"], "x", { ...opts, onPhase });
     expect(onPhase).toHaveBeenCalledWith("queued");
     expect(onPhase).toHaveBeenCalledWith("generating");
     expect(onPhase).toHaveBeenCalledWith("finalizing");
@@ -222,12 +209,7 @@ describe("editModify adapter (texture bank, Kontext multi-image)", () => {
 
   it("throws a retryable edit StepError when the model returns no image", async () => {
     subscribe.mockResolvedValue({ data: { images: [] } });
-    const rejection = await editModify(
-      "https://fal/work.jpg",
-      "https://fal/mask.png",
-      { textureUrl: "https://fal/oak.jpg", prompt: "x" },
-      opts,
-    ).catch((e) => e);
+    const rejection = await runKontext(["https://fal/crop.jpg"], "x", opts).catch((e) => e);
     expect(rejection).toMatchObject({ step: "edit", retryable: true });
   });
 });
