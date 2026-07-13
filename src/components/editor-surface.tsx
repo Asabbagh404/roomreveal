@@ -5,19 +5,31 @@ import { useGeneration } from "@/state/generation-context";
 import { runEdit } from "@/state/effects";
 import { makeStepError } from "@/state/step-error";
 import { createBlankBuffer, isBufferEmpty } from "@/lib/mask-buffer";
+import { downloadFile } from "@/lib/download-file";
 import { MaskCanvas } from "@/components/mask-canvas";
 import { GenerationButton } from "@/components/generation-button";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { usePhotoObjectUrl } from "@/components/use-photo-object-url";
 
 /**
- * Free-edit editor (Story 5.3, edit mode). Iterative « Enlever »: the user draws
- * a zone on the working image and erases it; the result becomes the base for the
- * next retouch. The effect layer owns the pipeline call (AR-LAYERS); this
- * component only reads state and dispatches intents, plus two housekeeping
- * effects (seed a blank mask, measure a new result's dims). The mask editing
- * surface is the reusable MaskCanvas (Story 5.2). WaitPanel/ErrorBanner overlays
- * live in ParcoursScene. Download + « Nouvelle image » arrive in Story 5.5;
- * « Ajouter » (text → flux fill) in Story 5.4.
+ * Free-edit editor (edit mode, Stories 5.3–5.5). Iterative retouch: draw a zone
+ * on the working image and « Enlever » (bria eraser) or « Ajouter » (flux fill
+ * from a text prompt); the result becomes the base for the next retouch. Closure
+ * actions « Télécharger l'image » (save the current result) and « Nouvelle image »
+ * (RESET to a blank upload, confirming first if unsaved retouches exist) end the
+ * cycle (Story 5.5). The effect layer owns the pipeline call (AR-LAYERS); this
+ * component reads state, dispatches intents, and runs housekeeping effects (seed
+ * a blank mask, measure a new result's dims). The mask editing surface is the
+ * reusable MaskCanvas (Story 5.2). WaitPanel/ErrorBanner overlays live in
+ * ParcoursScene; the beforeunload guard (5.1) already covers this step.
  */
 export function EditorSurface() {
   const { state, dispatch } = useGeneration();
@@ -140,7 +152,50 @@ export function EditorSurface() {
     }
   }, [state, dispatch, operation, prompt]);
 
-  const ready = backgroundUrl !== null && width > 0 && height > 0;
+  // ---- Closure actions (Story 5.5): download the current image, start over ----
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  // The epoch at which the current work image was last downloaded. « downloaded »
+  // is only true while no retouch has been applied SINCE (each EDIT_APPLIED bumps
+  // the epoch) — so a download-then-re-edit correctly re-arms the unsaved guard.
+  const [downloadedAtEpoch, setDownloadedAtEpoch] = useState<number | null>(null);
+  const hasDownloaded = downloadedAtEpoch === state.epoch;
+  const [confirmingNew, setConfirmingNew] = useState(false);
+  // Guard state updates that resolve after the surface unmounts mid-download.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const handleDownload = useCallback(async () => {
+    if (downloading || !backgroundUrl) return;
+    setDownloading(true);
+    setDownloadError(null);
+    const epochAtDownload = epochRef.current;
+    try {
+      // downloadFile fetches the URL → blob → <a download>; works for a fal
+      // result URL (public GET, no re-host — AD-4/AD-9) and a blob: objectURL.
+      await downloadFile(backgroundUrl, "roomreveal-edition.png");
+      if (mountedRef.current) setDownloadedAtEpoch(epochAtDownload);
+    } catch {
+      if (mountedRef.current) setDownloadError("Le téléchargement a échoué. Réessayez.");
+    } finally {
+      if (mountedRef.current) setDownloading(false);
+    }
+  }, [downloading, backgroundUrl]);
+
+  // « Nouvelle image » (Story 5.5): RESET to a blank Upload (mode preserved since
+  // 5.1). Confirm first only if unsaved retouches exist (UX-DR16); otherwise
+  // there's nothing to lose (fresh editor, or already downloaded).
+  const newImage = useCallback(() => {
+    if (retouchCount > 0 && !hasDownloaded) setConfirmingNew(true);
+    else dispatch({ type: "RESET" });
+  }, [retouchCount, hasDownloaded, dispatch]);
+
+  const ready = !!backgroundUrl && width > 0 && height > 0;
 
   return (
     <div className="flex w-full flex-col items-center gap-4">
@@ -211,6 +266,58 @@ export function EditorSurface() {
           {retouchCount > 0 ? ` · Retouche n° ${retouchCount}` : ""}
         </p>
       </div>
+
+      {/* Closure actions (Story 5.5), separated from the retouch zone: « Nouvelle
+          image » (ghost) · « Télécharger l'image » (gold — the closure primary).
+          Mirrors the reveal player's action row (4.3/4.4). */}
+      <div className="flex w-full max-w-md flex-col items-center gap-2 border-t border-bordure pt-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" onClick={newImage}>
+            Nouvelle image
+          </Button>
+          <GenerationButton
+            disabled={!ready || downloading}
+            onClick={handleDownload}
+          >
+            {downloading ? "Téléchargement…" : "Télécharger l’image"}
+          </GenerationButton>
+        </div>
+        {downloadError !== null && (
+          <p role="alert" aria-live="assertive" className="text-sm text-erreur">
+            {downloadError}
+          </p>
+        )}
+      </div>
+
+      <Dialog
+        open={confirmingNew}
+        onOpenChange={(open) => {
+          if (!open) setConfirmingNew(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Repartir d’une nouvelle image ?</DialogTitle>
+            <DialogDescription>
+              Vos retouches n’ont pas été téléchargées. Elles seront perdues si
+              vous continuez.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmingNew(false)}>
+              Annuler
+            </Button>
+            <Button
+              onClick={() => {
+                setConfirmingNew(false);
+                dispatch({ type: "RESET" });
+              }}
+            >
+              Continuer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
