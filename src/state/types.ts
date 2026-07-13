@@ -4,10 +4,24 @@
  * originalPhoto, mask, emptyRoom, reveal, generation, step.
  */
 
-/** The four linear Parcours steps, in order (AD-11 downstream ordering). */
-export type Step = "upload" | "mask" | "emptyRoom" | "video";
+/**
+ * The Parcours steps. `upload | mask | emptyRoom | video` form the linear reveal
+ * flow (in order, AD-11 downstream ordering); `editor` is the edit-mode step
+ * (Story 5.1) and is deliberately NOT part of STEP_ORDER — it has no downstream
+ * ordering in the reveal sense and must never be indexed by stepIndex.
+ */
+export type Step = "upload" | "mask" | "emptyRoom" | "video" | "editor";
 
-/** Canonical step order — used to compare upstream/downstream (AD-11). */
+/**
+ * The two top-level modes chosen on the home screen (Story 5.1). `undefined`
+ * mode (on the Generation) means "no choice yet" → the home screen is shown.
+ */
+export type Mode = "reveal" | "edit";
+
+/**
+ * Canonical reveal step order — used to compare upstream/downstream (AD-11).
+ * Only the four reveal steps; `editor` is excluded on purpose (see Step).
+ */
 export const STEP_ORDER: readonly Step[] = [
   "upload",
   "mask",
@@ -94,6 +108,8 @@ export interface MaskDraft {
  * state; loss on refresh is accepted. fal artifacts are referenced by URL.
  */
 export interface Generation {
+  /** Top-level mode chosen on the home screen (Story 5.1). `undefined` → home. */
+  mode?: Mode;
   step: Step;
   epoch: number;
   originalPhoto?: OriginalPhoto;

@@ -223,12 +223,99 @@ describe("generationReducer (pure, no mocks)", () => {
 
   it("RESET returns a brand-new Generation (« Nouvelle Génération »)", () => {
     const next = generationReducer(fullGeneration(), { type: "RESET" });
-    expect(next).toEqual(initialGeneration);
     expect(next).not.toBe(initialGeneration); // fresh object, not the shared singleton
     expect(next.step).toBe("upload");
     expect(next.epoch).toBe(0);
     expect(next.originalPhoto).toBeUndefined();
     expect(next.reveal).toBeUndefined();
+    // fullGeneration() has no mode → RESET must keep it undefined (not default it
+    // to a mode). Asserted explicitly: toEqual(initialGeneration) would pass
+    // vacuously here since undefined keys are stripped in deep equality.
+    expect(next.mode).toBeUndefined();
+  });
+
+  it("RESET preserves reveal mode too (not just edit)", () => {
+    const next = generationReducer(
+      { ...fullGeneration(), mode: "reveal" },
+      { type: "RESET" },
+    );
+    expect(next.mode).toBe("reveal");
+    expect(next.step).toBe("upload");
+  });
+
+  it("RESET preserves the current mode (« Nouvelle Génération » stays in the same mode, Story 5.1 AC5)", () => {
+    const state: Generation = { ...fullGeneration(), mode: "edit" };
+    const next = generationReducer(state, { type: "RESET" });
+    expect(next.mode).toBe("edit");
+    expect(next.step).toBe("upload"); // fresh upload, NOT the home screen
+    expect(next.epoch).toBe(0);
+    expect(next.originalPhoto).toBeUndefined();
+    expect(next.reveal).toBeUndefined();
+  });
+
+  it("SELECT_MODE(reveal) starts a clean Generation in reveal mode at upload", () => {
+    const next = generationReducer(fullGeneration(), {
+      type: "SELECT_MODE",
+      mode: "reveal",
+    });
+    expect(next.mode).toBe("reveal");
+    expect(next.step).toBe("upload");
+    expect(next.epoch).toBe(0);
+    expect(next.originalPhoto).toBeUndefined();
+    expect(next.mask).toBeUndefined();
+    expect(next.emptyRoom).toBeUndefined();
+    expect(next.reveal).toBeUndefined();
+    expect(next).not.toBe(initialGeneration); // fresh object
+  });
+
+  it("SELECT_MODE(edit) starts a clean Generation in edit mode at upload", () => {
+    const next = generationReducer(initialGeneration, {
+      type: "SELECT_MODE",
+      mode: "edit",
+    });
+    expect(next.mode).toBe("edit");
+    expect(next.step).toBe("upload");
+    expect(next.epoch).toBe(0);
+  });
+
+  it("PHOTO_NORMALIZED routes to the mask step in reveal mode", () => {
+    const photo = { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]), width: 1024, height: 768 };
+    const state: Generation = { step: "upload", epoch: 0, mode: "reveal" };
+    const next = generationReducer(state, { type: "PHOTO_NORMALIZED", photo });
+    expect(next.step).toBe("mask");
+    expect(next.mode).toBe("reveal"); // mode persists across upload
+  });
+
+  it("PHOTO_NORMALIZED routes to the editor step in edit mode (Story 5.1)", () => {
+    const photo = { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]), width: 1024, height: 768 };
+    const state: Generation = { step: "upload", epoch: 0, mode: "edit" };
+    const next = generationReducer(state, { type: "PHOTO_NORMALIZED", photo });
+    expect(next.step).toBe("editor");
+    expect(next.mode).toBe("edit");
+    expect(next.originalPhoto).toBe(photo);
+    expect(next.epoch).toBe(1);
+  });
+
+  it("GO_TO_STEP navigates editor→upload (edit-mode back move, Story 5.1)", () => {
+    const state: Generation = { step: "editor", epoch: 1, mode: "edit" };
+    const next = generationReducer(state, { type: "GO_TO_STEP", step: "upload" });
+    expect(next.step).toBe("upload");
+    expect(next.mode).toBe("edit"); // mode untouched
+  });
+
+  it("GO_TO_STEP never navigates a reveal step INTO editor (guarded against stepIndex -1)", () => {
+    const state: Generation = { step: "mask", epoch: 1, mode: "reveal" };
+    const next = generationReducer(state, { type: "GO_TO_STEP", step: "editor" });
+    expect(next).toBe(state); // no-op: editor is not a reveal step
+  });
+
+  it("CONFIRM_ADVANCE_FROM('editor') is a no-op — never feeds -1 into invalidateDownstream", () => {
+    const state = fullGeneration();
+    const next = generationReducer(state, {
+      type: "CONFIRM_ADVANCE_FROM",
+      step: "editor",
+    });
+    expect(next).toBe(state); // untouched; reveal artifacts NOT wiped
   });
 
   it("VIDEO_SUCCEEDED stores reveal without advancing the step or bumping epoch", () => {

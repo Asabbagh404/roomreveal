@@ -15,12 +15,15 @@ import { useGeneration } from "@/state/generation-context";
 import { STEP_ORDER, type Generation, type Step } from "@/state/types";
 import { cn } from "@/lib/utils";
 
-/** French labels for the four Parcours steps (glossary). */
+/** French labels for the Parcours steps (glossary). Only the four reveal steps
+ * are shown by RevealStepper (it maps STEP_ORDER); `editor` has its own
+ * indicator (Story 5.1) and its label here is never rendered by the stepper. */
 const STEP_LABELS: Record<Step, string> = {
   upload: "Upload",
   mask: "Masque",
   emptyRoom: "Pièce vide",
   video: "Vidéo",
+  editor: "Édition",
 };
 
 /** The artifact whose presence proves a step ahead of `current` is still reachable. */
@@ -56,6 +59,55 @@ export function hasDownstreamArtifacts(state: Generation, target: Step): boolean
  * position + label combine (UX-DR18).
  */
 export function Stepper() {
+  const { state, dispatch } = useGeneration();
+
+  // Home screen: no Parcours yet, just the brand (Story 5.1). Matches the
+  // AppShell fallback so the header reads the same before a mode is chosen.
+  if (state.mode === undefined) {
+    return <p className="text-carton-titre text-texte-secondaire">RoomReveal</p>;
+  }
+
+  // Edit mode: a simplified indicator — no four-step Parcours, never « 4/4 »
+  // (Story 5.1). Once on the editor, « Photo » navigates back to the upload
+  // step (GO_TO_STEP editor→upload) so the placeholder is never a dead end.
+  if (state.mode === "edit") {
+    const atEditor = state.step === "editor";
+    return (
+      <nav
+        aria-label="Édition"
+        className="flex items-center gap-2 text-carton-titre"
+      >
+        <button
+          type="button"
+          disabled={!atEditor}
+          aria-current={atEditor ? undefined : "step"}
+          onClick={() => dispatch({ type: "GO_TO_STEP", step: "upload" })}
+          className={
+            atEditor
+              ? "text-texte-secondaire hover:text-texte-principal cursor-pointer"
+              : "text-or-lumineux cursor-default"
+          }
+        >
+          Photo
+        </button>
+        <span className="text-texte-secondaire" aria-hidden>
+          →
+        </span>
+        <span
+          aria-current={atEditor ? "step" : undefined}
+          className={atEditor ? "text-or-lumineux" : "text-texte-secondaire"}
+        >
+          Édition
+        </span>
+      </nav>
+    );
+  }
+
+  return <RevealStepper />;
+}
+
+/** The original four-step reveal Parcours stepper (Story 1.2), unchanged. */
+function RevealStepper() {
   const { state, dispatch } = useGeneration();
   const currentIndex = STEP_ORDER.indexOf(state.step);
   const [pendingAdvance, setPendingAdvance] = useState<Step | null>(null);

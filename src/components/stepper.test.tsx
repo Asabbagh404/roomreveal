@@ -1,13 +1,16 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Stepper, hasDownstreamArtifacts, isReachableAhead } from "./stepper";
-import { GenerationProvider } from "@/state/generation-context";
+import { GenerationProvider, useGeneration } from "@/state/generation-context";
 import type { Generation } from "@/state/types";
 
 describe("Stepper rendering (AC4)", () => {
+  // The four-step Parcours stepper is the reveal mode (Story 5.1); seed it.
+  const revealUpload: Generation = { step: "upload", epoch: 0, mode: "reveal" };
+
   it("renders the four Parcours labels", () => {
     render(
-      <GenerationProvider>
+      <GenerationProvider initialState={revealUpload}>
         <Stepper />
       </GenerationProvider>,
     );
@@ -18,7 +21,7 @@ describe("Stepper rendering (AC4)", () => {
 
   it("marks the initial step (Upload) as aria-current and later steps disabled", () => {
     render(
-      <GenerationProvider>
+      <GenerationProvider initialState={revealUpload}>
         <Stepper />
       </GenerationProvider>,
     );
@@ -36,6 +39,7 @@ describe("Stepper re-advance confirmation (AC3)", () => {
   const wentBack: Generation = {
     step: "mask",
     epoch: 1,
+    mode: "reveal",
     originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]), width: 1024, height: 768 },
     mask: "fal://mask",
     emptyRoom: "fal://empty",
@@ -83,6 +87,7 @@ describe("Stepper terminal completion — 4/4 coché (Story 4.2)", () => {
   const atVideo = (reveal?: string): Generation => ({
     step: "video",
     epoch: 2,
+    mode: "reveal",
     mask: "fal://mask",
     emptyRoom: "fal://empty",
     ...(reveal ? { reveal } : {}),
@@ -106,6 +111,51 @@ describe("Stepper terminal completion — 4/4 coché (Story 4.2)", () => {
       </GenerationProvider>,
     );
     expect(screen.getByText("Vidéo").closest("button")?.textContent).toContain("4");
+  });
+});
+
+describe("Stepper mode adaptation (Story 5.1, AC4)", () => {
+  it("shows only the brand (no 4-step Parcours) on the home screen (mode undefined)", () => {
+    render(
+      <GenerationProvider initialState={{ step: "upload", epoch: 0 }}>
+        <Stepper />
+      </GenerationProvider>,
+    );
+    expect(screen.getByText("RoomReveal")).toBeDefined();
+    expect(screen.queryByText("Masque")).toBeNull();
+    expect(screen.queryByText("Vidéo")).toBeNull();
+  });
+
+  it("shows a simplified indicator (no « 4/4 » Parcours) in edit mode", () => {
+    render(
+      <GenerationProvider
+        initialState={{ step: "editor", epoch: 1, mode: "edit" }}
+      >
+        <Stepper />
+      </GenerationProvider>,
+    );
+    expect(screen.getByText("Photo")).toBeDefined();
+    expect(screen.getByText("Édition")).toBeDefined();
+    // The reveal Parcours labels must not appear in edit mode.
+    expect(screen.queryByText("Pièce vide")).toBeNull();
+    expect(screen.queryByText("Vidéo")).toBeNull();
+  });
+
+  it("« Photo » navigates back to upload from the editor (no dead end)", () => {
+    function Probe() {
+      const { state } = useGeneration();
+      return <span data-testid="step">{state.step}</span>;
+    }
+    render(
+      <GenerationProvider
+        initialState={{ step: "editor", epoch: 1, mode: "edit" }}
+      >
+        <Stepper />
+        <Probe />
+      </GenerationProvider>,
+    );
+    fireEvent.click(screen.getByText("Photo"));
+    expect(screen.getByTestId("step").textContent).toBe("upload");
   });
 });
 

@@ -2,9 +2,11 @@
 
 import { useEffect } from "react";
 import { useGeneration } from "@/state/generation-context";
+import { HomeScene } from "@/components/home-scene";
 import { UploadZone } from "@/components/upload-zone";
 import { MaskSurface } from "@/components/mask-surface";
 import { EmptyRoomSurface } from "@/components/empty-room-surface";
+import { EditorSurface } from "@/components/editor-surface";
 import { VideoSurface } from "@/components/video-surface";
 import { WaitPanel } from "@/components/wait-panel";
 import { ErrorBanner } from "@/components/error-banner";
@@ -19,9 +21,12 @@ export function ParcoursScene() {
   const { state, dispatch } = useGeneration();
 
   // Warn before a refresh/close discards an in-progress Generation (UX-DR15, no
-  // resume in v1, AD-3). Only while past Upload; the custom text is ignored by
-  // modern browsers (they show a generic prompt) but returnValue must be set.
-  const generationInProgress = state.step !== "upload";
+  // resume in v1, AD-3). Only once a mode is chosen AND past Upload — the home
+  // screen and a blank Upload have nothing to lose (Story 5.1). The custom text
+  // is ignored by modern browsers (they show a generic prompt) but returnValue
+  // must be set.
+  const generationInProgress =
+    state.mode !== undefined && state.step !== "upload";
   useEffect(() => {
     if (!generationInProgress) return;
     function onBeforeUnload(e: BeforeUnloadEvent) {
@@ -65,6 +70,21 @@ export function ParcoursScene() {
 function StepSurface() {
   const { state } = useGeneration();
 
+  // No mode chosen yet → the home screen (Story 5.1).
+  if (state.mode === undefined) {
+    return <HomeScene />;
+  }
+
+  // Edit mode (Story 5.1): upload, then the (placeholder) editor. The real
+  // iterative editor arrives in Stories 5.2–5.4.
+  if (state.mode === "edit") {
+    if (state.step === "editor") {
+      return <EditorSurface />;
+    }
+    return <UploadZone />;
+  }
+
+  // Reveal mode: the original four-step Parcours, unchanged.
   if (state.step === "upload") {
     return (
       <>

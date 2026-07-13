@@ -27,8 +27,12 @@ function fileOfType(type: string, size = 1024): File {
 }
 
 function renderWithParcours() {
+  // The upload→Masque flow is the reveal Parcours; seed reveal mode so the
+  // four-step Stepper renders (Story 5.1: the home screen has no stepper).
   return render(
-    <GenerationProvider>
+    <GenerationProvider
+      initialState={{ step: "upload", epoch: 0, mode: "reveal" }}
+    >
       <Stepper />
       <UploadZone />
     </GenerationProvider>,

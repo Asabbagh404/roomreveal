@@ -1,6 +1,7 @@
 import {
   type Generation,
   type MaskBuffer,
+  type Mode,
   type OriginalPhoto,
   type Step,
   type StepError,
@@ -22,6 +23,7 @@ export const initialGeneration: Generation = {
  * live in src/state/effects.ts, created later).
  */
 export type GenerationAction =
+  | { type: "SELECT_MODE"; mode: Mode }
   | { type: "PHOTO_NORMALIZED"; photo: OriginalPhoto }
   | { type: "PHOTO_UPLOADED"; falUrl: string }
   | { type: "DETECTION_UPLOADED"; falUrl: string }
@@ -74,17 +76,24 @@ export function generationReducer(
   action: GenerationAction,
 ): Generation {
   switch (action.type) {
+    case "SELECT_MODE":
+      // Home-screen choice (Story 5.1): start a clean Generation in the chosen
+      // mode, at the Upload step. Fresh object (not the shared singleton), so
+      // nothing from a previous mode/attempt leaks (AD-3/AD-11).
+      return { ...initialGeneration, mode: action.mode };
+
     case "PHOTO_NORMALIZED":
       // A new photo is a fresh Generation attempt: every downstream artifact
       // that belonged to the previous photo is now stale and must be dropped
       // (AD-11), and the epoch is bumped so any in-flight prior job is discarded
-      // (AD-12). Only originalPhoto survives, at the mask step.
+      // (AD-12). Only originalPhoto (and the mode) survive. The next step is
+      // mode-aware (Story 5.1): reveal → "mask" (detection), edit → "editor".
       return {
         ...state,
         ...invalidateDownstream("upload"),
         originalPhoto: action.photo,
         maskDraft: undefined,
-        step: "mask",
+        step: state.mode === "edit" ? "editor" : "mask",
         epoch: state.epoch + 1,
         error: undefined,
         waitPhase: undefined,
@@ -209,17 +218,34 @@ export function generationReducer(
       // the surfaces unmounting make any in-flight downstream job stale/aborted
       // (AD-11/12); nothing from the finished Generation survives (AD-3).
       // Fresh object (not the shared singleton) — consistent with every other
-      // branch and safe if initialGeneration ever gains mutable fields.
-      return { ...initialGeneration };
+      // branch and safe if initialGeneration ever gains mutable fields. The
+      // mode is PRESERVED (Story 5.1 AC5): « Nouvelle Génération » restarts on
+      // a blank Upload within the SAME mode, not back at the home screen.
+      return { ...initialGeneration, mode: state.mode };
 
     case "GO_TO_STEP":
       // Back (or same) navigation only: never advance, never touch artifacts.
       // Clear transient per-attempt fields (error, waitPhase) — a preserved
       // waitPhase would otherwise make AD-14 monotonicity reject the next attempt.
-      if (stepIndex(action.step) > stepIndex(state.step)) return state;
+      // "editor" (edit mode) is outside STEP_ORDER, so it must NOT go through the
+      // stepIndex comparison (which would return -1 and mis-classify moves):
+      // - from "editor", only editor→upload is a valid back move (the edit
+      //   stepper's « Photo »); anything else is a no-op.
+      // - a reveal step may never navigate INTO "editor".
+      if (state.step === "editor") {
+        if (action.step !== "upload") return state;
+      } else if (action.step === "editor") {
+        return state;
+      } else if (stepIndex(action.step) > stepIndex(state.step)) {
+        return state;
+      }
       return { ...state, step: action.step, error: undefined, waitPhase: undefined };
 
     case "CONFIRM_ADVANCE_FROM": {
+      // Reveal-flow action only (STEP_ORDER). "editor" is reached via
+      // PHOTO_NORMALIZED, never here — reject it so a stray dispatch can't feed
+      // "editor" into invalidateDownstream (stepIndex -1 would wipe everything).
+      if (action.step === "editor") return state;
       const next = { ...state, ...invalidateDownstream(action.step) };
       return {
         ...next,
