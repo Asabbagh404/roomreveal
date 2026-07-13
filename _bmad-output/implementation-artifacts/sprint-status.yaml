@@ -43,9 +43,10 @@
 #   their stories will be added here once the epic breakdown is extended.
 
 generated: 2026-07-10
-last_updated: 2026-07-12
+last_updated: 2026-07-13
 project: flux_test
 # Epic 4 stories (4.1-4.5) registered 2026-07-12 via sprint-planning.
+# Epic 5 stories (5.1-5.5) registered 2026-07-13 via sprint-planning (mode « Édition d'image libre »).
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
@@ -76,3 +77,10 @@ development_status:
   4-4-nouvelle-generation-cloture-du-cycle-de-vie: done
   4-5-cout-unitaire-documente-deploiement-de-l-instance-demo: done
   epic-4-retrospective: optional
+  epic-5: backlog
+  5-1-ecran-d-accueil-selection-du-mode: backlog
+  5-2-extraction-d-un-canvas-de-masque-reutilisable-maskcanvas: backlog
+  5-3-etape-editeur-retrait-d-objet-enlever: backlog
+  5-4-ajout-d-objet-par-texte-ajouter: backlog
+  5-5-telechargement-de-l-image-nouvelle-edition: backlog
+  epic-5-retrospective: optional
