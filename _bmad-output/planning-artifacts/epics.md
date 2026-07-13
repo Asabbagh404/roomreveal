@@ -144,7 +144,7 @@ Le climax : Génération FLF (première frame = Pièce vide, dernière frame = P
 **FRs covered:** FR-10, FR-11, FR-12
 
 ### Epic 5 : Édition d'image libre
-Un second mode, choisi à l'accueil : au lieu de la vidéo révélation, l'utilisateur édite librement une photo de façon **itérative** — dessiner une zone puis **enlever** un objet (bria eraser) ou **ajouter** un objet décrit au texte (flux-fill masqué, « pot de fleur » généré dans la zone). Chaque retouche devient la base de la suivante ; sortie = image téléchargeable, pas de vidéo. Réutilise l'éditeur de masque, l'upload/normalisation et le pattern pipeline. Voir `docs/plans/2026-07-13-image-edit-mode-design.md`.
+Un second mode, choisi à l'accueil : au lieu de la vidéo révélation, l'utilisateur édite librement une photo de façon **itérative** — dessiner une zone puis **enlever** un objet (bria eraser) ou **ajouter** un objet décrit au texte (flux-fill masqué, « pot de fleur » généré dans la zone). Chaque retouche devient la base de la suivante ; sortie = image téléchargeable, pas de vidéo. Réutilise l'éditeur de masque, l'upload/normalisation et le pattern pipeline. La sélection d'un objet peut aussi se faire **au clic** (SAM point-prompt) en plus du pinceau (Story 5.6). Voir `docs/plans/2026-07-13-image-edit-mode-design.md` et `docs/plans/2026-07-13-click-to-select-design.md`.
 **FRs covered:** (nouveau mode hors PRD v1 initial — extension produit)
 
 ## Epic 1: Socle du Parcours & Upload
@@ -668,3 +668,28 @@ So that je récupère mon résultat et j'enchaîne sans confusion ni perte accid
 **Given** une édition en cours (au-delà de l'accueil/upload)
 **When** l'utilisateur rafraîchit ou ferme l'onglet
 **Then** `beforeunload` avertit que le travail en cours sera perdu (UX-DR15, pas de reprise en v1)
+
+### Story 5.6: Sélection d'objet au clic (SAM point-prompt)
+
+As a utilisateur en mode édition,
+I want cliquer sur un objet pour le sélectionner entièrement au lieu de le peindre au pinceau,
+So that je masque un objet aux contours complexes en un clic, sans travail manuel fastidieux.
+
+**Acceptance Criteria:**
+
+**Given** l'étape `editor` avec une image de travail
+**When** l'utilisateur active l'outil « Sélection » et clique sur un objet
+**Then** le point cliqué (converti en coordonnées buffer canoniques via `screenToBuffer`) est envoyé à SAM en mode point-prompt (`MODELS.pointSegment`, backend piloté par `DETECT_BACKEND` : `fal-ai/sam2/image` par défaut, serveur Grounded-SAM local en option) et le masque de l'objet est renvoyé (blanc = objet, AD-7)
+**And** l'appel suit le pattern adaptateur (`src/pipeline/point-segment.ts`, miroir de `detect.ts` : AbortController chaîné, timeout→`StepError("pointSegment")` AD-8, header 24 h AD-9) orchestré par `effects.ts` (`runPointSegment`, gardes `dead()` AD-12)
+
+**Given** un masque déjà présent sur le canvas (clics précédents ou pinceau)
+**When** un nouveau clic renvoie un masque d'objet
+**Then** le masque renvoyé est décodé côté client et **unionné pixel-à-pixel** (`max`) dans `maskDraft.buffer` (via `SET_MASK_BUFFER`, immuable, AD-13) — les objets s'accumulent — puis reste ajustable au pinceau/gomme et applicable via « Enlever »
+
+**Given** un appel de segmentation en cours
+**When** l'utilisateur clique à nouveau
+**Then** le second clic est ignoré jusqu'à la résolution ; un **loader signature** s'affiche : un point doré qui pulse au point cliqué pendant l'appel, puis un pulse unique qui englobe l'objet à la réponse (retombe sur l'overlay rose standard) ; en cas d'échec, bannière d'erreur standard et aucun changement de masque
+
+**Given** le mode reveal (parcours vidéo)
+**When** l'éditeur de masque `MaskSurface` est monté
+**Then** l'outil « Sélection » n'est pas exposé (feature edit-only) — le pinceau/gomme/undo/zoom/pan restent inchangés dans les deux modes
