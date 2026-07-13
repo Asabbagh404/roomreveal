@@ -880,6 +880,8 @@ describe("runEdit — modify operation (texture bank, flux-general)", () => {
     });
 
     expect(resolveTextureUrl).toHaveBeenCalledWith("bois");
+    // Texture resolve shows the WaitPanel feedback (mirrors the lazy upload).
+    expect(dispatch).toHaveBeenCalledWith({ type: "SET_WAIT_PHASE", phase: "uploading" });
     expect(editModify).toHaveBeenCalledWith(
       "https://fal/work.jpg",
       "https://fal/mask.png",

@@ -210,10 +210,9 @@ export async function runEdit(
   }
 
   const dead = () => signal.aborted || isStale();
-  // Retouch feedback is the editor's inline pink-zone pulse, not the full-screen
-  // WaitPanel — phases are ignored here (no SET_WAIT_PHASE), mirroring
-  // runPointSegment. The masked zones breathe while the edit is in flight.
-  const onPhase = () => {};
+  const onPhase = (phase: WaitPhase) => {
+    if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase });
+  };
 
   try {
     // Upload the work image once, lazily. First retouch: the uploaded blob.
@@ -221,6 +220,7 @@ export async function runEdit(
     let imageUrl = editBase.url;
     if (imageUrl === undefined) {
       if (editBase.blob === undefined) return; // nothing to upload/edit
+      if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase: "uploading" });
       imageUrl = await uploadArtifact(editBase.blob);
       if (dead()) return;
       dispatch({ type: "EDIT_BASE_UPLOADED", url: imageUrl });
@@ -237,10 +237,12 @@ export async function runEdit(
       result = await editAdd(imageUrl, maskUrl, trimmedPrompt, { signal, onPhase });
     } else if (operation === "modify") {
       // Resolve the chosen texture (if any) to a fal URL — the static texture is
-      // uploaded at most once/session (memoized). No SET_WAIT_PHASE: the editor's
-      // inline pulse is the only feedback (mirrors add/remove/pointSegment).
+      // uploaded at most once/session (memoized). Seed the "uploading" phase so
+      // the WaitPanel shows during the round-trip, mirroring the lazy image
+      // upload above.
       let textureUrl: string | undefined;
       if (textureId !== undefined) {
+        if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase: "uploading" });
         textureUrl = await resolveTextureUrl(textureId);
         if (dead()) return;
       }
