@@ -135,3 +135,26 @@ export const REVEAL_NEGATIVE_PROMPT =
  *   momentum, smooth camera hold, furniture arriving in motion from off-screen;
  *   never fading or morphing in place"
  */
+
+/**
+ * Free-edit « Modifier » prompt (texture bank). Composes an instruction that
+ * (a) bounds the change to the masked element, preserving its shape, lighting
+ * and perspective, (b) folds in the chosen texture's descriptive prompt (paired
+ * with the texture image as an IP-Adapter reference in editModify), and (c)
+ * folds in the user's free instruction. Either half may be empty (texture OR
+ * instruction), but the region-bounding sentence is always present. [À calibrer
+ * live avec le scale IP-Adapter de flux-general.]
+ */
+export function buildModifyPrompt(
+  texturePrompt?: string,
+  instruction?: string,
+): string {
+  const parts = [
+    "Change only the masked object, keeping its exact shape, position, lighting and perspective; leave everything outside the masked region unchanged.",
+  ];
+  const tex = texturePrompt?.trim();
+  const ins = instruction?.trim();
+  if (tex) parts.push(`Apply this material to it: ${tex}.`);
+  if (ins) parts.push(ins);
+  return parts.join(" ");
+}
