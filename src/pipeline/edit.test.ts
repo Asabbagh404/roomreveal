@@ -155,16 +155,13 @@ describe("editAdd adapter (Story 5.4, flux-pro/v1/fill)", () => {
   });
 });
 
-interface IpAdapterInput {
-  image_url?: string;
-  scale?: number;
-  path?: string;
-  weight_name?: string;
-  image_encoder_path?: string;
+interface KontextInput {
+  image_urls?: string[];
+  prompt?: string;
 }
 
-describe("editModify adapter (texture bank)", () => {
-  it("returns the first generated image URL (flux-general returns an images[] array)", async () => {
+describe("editModify adapter (texture bank, Kontext multi-image)", () => {
+  it("returns the first generated image URL (Kontext returns an images[] array)", async () => {
     subscribe.mockResolvedValue({ data: { images: [{ url: "https://fal/modified.png" }] } });
     const result = await editModify(
       "https://fal/work.jpg",
@@ -175,7 +172,7 @@ describe("editModify adapter (texture bank)", () => {
     expect(result.image).toBe("https://fal/modified.png");
   });
 
-  it("sends a top-level mask and references the texture via an ip-adapter when a textureUrl is given", async () => {
+  it("sends image_urls [workingImage, textureImage] when a textureUrl is given", async () => {
     subscribe.mockResolvedValue({ data: { images: [{ url: "u" }] } });
     await editModify(
       "https://fal/work.jpg",
@@ -183,33 +180,13 @@ describe("editModify adapter (texture bank)", () => {
       { textureUrl: "https://fal/oak.jpg", prompt: "plancher chêne" },
       opts,
     );
-    const [, cfg] = subscribe.mock.calls[0] as [
-      string,
-      {
-        input: {
-          image_url?: string;
-          mask_url?: string;
-          prompt?: string;
-          ip_adapters?: IpAdapterInput[];
-        };
-      },
-    ];
-    expect(cfg.input.image_url).toBe("https://fal/work.jpg");
-    expect(cfg.input.mask_url).toBe("https://fal/mask.png");
+    const [, cfg] = subscribe.mock.calls[0] as [string, { input: KontextInput }];
+    // Working image first, texture reference second (the prompt refers to it).
+    expect(cfg.input.image_urls).toEqual(["https://fal/work.jpg", "https://fal/oak.jpg"]);
     expect(cfg.input.prompt).toBe("plancher chêne");
-    expect(cfg.input.ip_adapters).toBeDefined();
-    const adapter = cfg.input.ip_adapters?.[0];
-    expect(adapter?.image_url).toBe("https://fal/oak.jpg");
-    expect(adapter?.scale).toBeTypeOf("number");
-    // Regression guard for the 422 root cause: fal's IP-Adapter loader needs the
-    // weights filename (path alone → `'NoneType'.split` → 422). weight_name +
-    // path + image_encoder_path must all be present.
-    expect(adapter?.path).toBe("XLabs-AI/flux-ip-adapter");
-    expect(adapter?.weight_name).toBe("ip_adapter.safetensors");
-    expect(adapter?.image_encoder_path).toBe("openai/clip-vit-large-patch14");
   });
 
-  it("still sends the top-level mask but omits the ip-adapter when no textureUrl is given (instruction-only recolor)", async () => {
+  it("sends only the working image (no texture) for an instruction-only recolor", async () => {
     subscribe.mockResolvedValue({ data: { images: [{ url: "u" }] } });
     await editModify(
       "https://fal/work.jpg",
@@ -217,21 +194,9 @@ describe("editModify adapter (texture bank)", () => {
       { prompt: "repeindre en bleu" },
       opts,
     );
-    const [, cfg] = subscribe.mock.calls[0] as [
-      string,
-      {
-        input: {
-          image_url?: string;
-          mask_url?: string;
-          prompt?: string;
-          ip_adapters?: IpAdapterInput[];
-        };
-      },
-    ];
-    expect(cfg.input.image_url).toBe("https://fal/work.jpg");
-    expect(cfg.input.mask_url).toBe("https://fal/mask.png");
+    const [, cfg] = subscribe.mock.calls[0] as [string, { input: KontextInput }];
+    expect(cfg.input.image_urls).toEqual(["https://fal/work.jpg"]);
     expect(cfg.input.prompt).toBe("repeindre en bleu");
-    expect(cfg.input.ip_adapters).toBeUndefined();
   });
 
   it("maps queue statuses to wait phases", async () => {

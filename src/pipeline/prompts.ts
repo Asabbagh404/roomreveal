@@ -149,12 +149,19 @@ export function buildModifyPrompt(
   texturePrompt?: string,
   instruction?: string,
 ): string {
-  const parts = [
-    "Change only the masked object, keeping its exact shape, position, lighting and perspective; leave everything outside the masked region unchanged.",
-  ];
   const tex = texturePrompt?.trim();
   const ins = instruction?.trim();
-  if (tex) parts.push(`Apply this material to it: ${tex}.`);
+  const parts: string[] = [];
+  if (tex) {
+    // Kontext multi-image: the texture swatch is the SECOND input image.
+    parts.push(
+      `Retexture the target object with the material shown in the second image (${tex}): map that material's colour, pattern and finish onto the object, following its existing shape, edges and perspective.`,
+    );
+  }
   if (ins) parts.push(ins);
+  // Kontext is maskless — this preservation clause is what confines the change.
+  parts.push(
+    "Keep everything else in the scene exactly the same: the framing, camera angle, layout, the other objects, and the lighting must not change.",
+  );
   return parts.join(" ");
 }

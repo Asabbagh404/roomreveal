@@ -140,45 +140,24 @@ export async function editAdd(
 }
 
 /**
- * IP-Adapter conditioning strength for the texture reference (0..1). Calibrated
- * live: 0.7 keeps the masked region recognizably the working scene while pulling
- * material/colour from the reference texture; higher over-styles, lower ignores
- * the texture. Tune against the bench before shipping.
- */
-const IP_ADAPTER_SCALE = 0.7;
-
-/**
- * Hugging Face repo + weights file + image encoder for the flux IP-Adapter
- * (XLabs-AI/flux-ip-adapter v1). `weight_name` is REQUIRED at runtime: without
- * it fal's loader hits `'NoneType' object has no attribute 'split'` and returns
- * 422 (it splits the filename to pick the loader) — `path` alone is not enough.
- * `ip_adapter.safetensors` is the actual (only) weights file in that repo;
- * CLIP ViT-L/14 is the v1 image encoder. Swap all three together if benching a
- * different adapter (e.g. flux-ip-adapter-v2 uses a different encoder).
- */
-const IP_ADAPTER_PATH = "XLabs-AI/flux-ip-adapter";
-const IP_ADAPTER_WEIGHT_NAME = "ip_adapter.safetensors";
-const IP_ADAPTER_IMAGE_ENCODER_PATH = "openai/clip-vit-large-patch14";
-
-/**
- * Free-edit MODIFY adapter (AD-5, AD-12, texture bank): re-renders the masked
- * (white) region of the working image with flux-general/inpainting so it takes on
- * a chosen material/colour, leaving the rest intact, and returns the URL of the
- * result. The inpaint mask is a TOP-LEVEL `mask_url` (white = edited region) that
- * applies in ALL modes, so locality is mask-native regardless of texture. Two
- * modes, one endpoint:
- *  - texture chosen → an optional IP-Adapter references the texture image (its
- *    `image_url`) so the masked region pulls material/colour from the reference;
- *    `prompt` steers it.
- *  - no texture (instruction-only recolor) → no `ip_adapters` at all; the composed
- *    `prompt` (plus the top-level mask) alone drives the change.
- * `ip_adapters` is therefore present ONLY when a texture is chosen — and it no
- * longer carries its own mask (the mask is top-level now). `scale`/path fields are
- * calibrated live. Same skeleton as editAdd/editRemove; flux-general returns an
- * `images[]` array (read `images[0].url`), so it reuses `EditAddRawOutput`.
- * Documented fallback if the IP-Adapter `scale` proves fiddly: nano-banana-2/edit
- * (maskless) + a highlighted-region guidance image. @fal-ai/client is reached only
- * through ./client.
+ * Free-edit MODIFY adapter (AD-5, AD-12, texture bank): re-renders the working
+ * image with the in-context editor `flux-pro/kontext/multi` so a chosen object
+ * takes on an EXACT reference texture, and returns the URL of the result. Kontext
+ * is an instruction-driven multi-image editor — it applies the material shown in
+ * the SECOND image onto the target in the FIRST, which transfers a real swatch far
+ * better than an IP-Adapter (which only conditions global style — benched weak,
+ * 2026-07-14). Two modes, one endpoint:
+ *  - texture chosen → `image_urls: [workingImage, textureImage]`; the prompt tells
+ *    Kontext to apply the second image's material to the target object.
+ *  - no texture (instruction-only recolor) → `image_urls: [workingImage]`; the
+ *    prompt alone drives the change.
+ * Kontext is MASKLESS: locality is steered by the prompt ("keep everything else
+ * identical"), not a mask. `maskUrl` is therefore currently UNUSED here — it is
+ * kept in the signature so the effect layer's call is unchanged and reserved for a
+ * future v2 (client-side recompositing of the result within the mask for strict
+ * locality). Kontext returns an `images[]` array (read `images[0].url`), so it
+ * reuses `EditAddRawOutput`. Same abort/timeout/queue/retention skeleton as
+ * editAdd/editRemove. @fal-ai/client is reached only through ./client.
  */
 export async function editModify(
   imageUrl: string,
@@ -186,6 +165,7 @@ export async function editModify(
   { textureUrl, prompt }: { textureUrl?: string; prompt: string },
   { signal, onPhase }: AdapterOptions,
 ): Promise<EditResult> {
+  void maskUrl; // reserved for a future mask-recompositing pass (see JSDoc).
   const controller = new AbortController();
   const onExternalAbort = () => controller.abort();
   signal.addEventListener("abort", onExternalAbort);
@@ -202,25 +182,11 @@ export async function editModify(
   try {
     const run = fal.subscribe(MODELS.editModify, {
       input: {
-        image_url: imageUrl,
-        // Top-level inpaint mask (white = edited region); applies in ALL modes.
-        mask_url: maskUrl,
+        // Kontext multi-image: [working image, texture reference]. The texture is
+        // the SECOND image — the prompt refers to it. Instruction-only modify (no
+        // texture) sends just the working image.
+        image_urls: textureUrl ? [imageUrl, textureUrl] : [imageUrl],
         prompt,
-        // The texture reference only exists when the user picked a texture;
-        // instruction-only recolor omits ip_adapters (prompt + mask drive it).
-        ...(textureUrl
-          ? {
-              ip_adapters: [
-                {
-                  image_url: textureUrl,
-                  scale: IP_ADAPTER_SCALE,
-                  path: IP_ADAPTER_PATH,
-                  weight_name: IP_ADAPTER_WEIGHT_NAME,
-                  image_encoder_path: IP_ADAPTER_IMAGE_ENCODER_PATH,
-                },
-              ],
-            }
-          : {}),
       },
       abortSignal: controller.signal,
       headers: {
