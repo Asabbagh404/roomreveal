@@ -24,6 +24,13 @@ export const MODELS = {
   // but that generative behavior is exactly what ADDING an object wants. Swappable
   // (bench-ready vs bria/genfill). Mask white = where the described object goes.
   editAdd: "fal-ai/flux-pro/v1/fill",
+  // Masked inpaint + IP-Adapter (real texture image reference) + prompt for the
+  // free-edit « Modifier » (texture bank): regenerates the WHITE masked region
+  // constrained by an IP-Adapter reference image (the chosen texture) and the
+  // prompt, leaving the rest pixel-identical (mask-native locality). Swappable /
+  // bench-gated. Documented fallback: nano-banana-2/edit (maskless) + a
+  // highlighted-region guidance image, if the IP-Adapter `scale` proves fiddly.
+  editModify: "fal-ai/flux-general/image-to-image",
   // Point-prompt segmentation for click-to-select in the free editor (Story 5.6):
   // SAM's OTHER interface — a single click point → the mask of the object under it
   // (vs `detect`, which text-prompts the SAME family). Backend piloted by
@@ -42,6 +49,7 @@ export const TIMEOUTS_MS = {
   // Free-edit retouch (Story 5.3 remove = bria eraser; 5.4 add = flux fill).
   edit: 90_000,
   editAdd: 90_000,
+  editModify: 90_000,
   // Click-to-select is interactive — a click should feel near-instant; cap short.
   pointSegment: 60_000,
 } as const;
@@ -83,7 +91,8 @@ export const LOCAL_DETECT_TIMEOUT_MS = 180_000;
  * the proxy's default allowed URL patterns (a separate, URL-pattern gate).
  *
  * Wired models: detect + inpaint (bria) + emptyRoomAuto (nano) + editAdd
- * (flux fill) + pointSegment (sam2, click-to-select) + video (kling).
+ * (flux fill) + editModify (flux-general IP-Adapter) + pointSegment (sam2,
+ * click-to-select) + video (kling).
  */
 export const FAL_ALLOWED_ENDPOINTS: readonly string[] = [
   `${MODELS.detect}/**`,
@@ -96,6 +105,9 @@ export const FAL_ALLOWED_ENDPOINTS: readonly string[] = [
   // from the allowlist at the 3.1 swap to bria; the edit-add role needs it back.
   `${MODELS.editAdd}/**`,
   `${MODELS.editAdd}`,
+  // Masked IP-Adapter inpaint for the free-edit « Modifier » (texture bank).
+  `${MODELS.editModify}/**`,
+  `${MODELS.editModify}`,
   // Point-prompt SAM for click-to-select (Story 5.6, fal backend).
   `${MODELS.pointSegment}/**`,
   `${MODELS.pointSegment}`,

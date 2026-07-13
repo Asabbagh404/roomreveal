@@ -4,6 +4,7 @@ import {
   FAL_ALLOWED_ENDPOINTS,
   MODELS,
   PROXY_URL,
+  TIMEOUTS_MS,
 } from "./config";
 
 describe("pipeline config registry (AR-CONFIG / AR-PROXY)", () => {
@@ -27,6 +28,13 @@ describe("pipeline config registry (AR-CONFIG / AR-PROXY)", () => {
   it("references sam2 for the click-to-select role (Story 5.6)", () => {
     expect(MODELS.pointSegment).toBe("fal-ai/sam2/image");
     expect(FAL_ALLOWED_ENDPOINTS).toContain(`${MODELS.pointSegment}/**`);
+  });
+
+  it("registers the editModify model, timeout and allowlist entries", () => {
+    expect(MODELS.editModify).toBe("fal-ai/flux-general/image-to-image");
+    expect(TIMEOUTS_MS.editModify).toBeGreaterThan(0);
+    expect(FAL_ALLOWED_ENDPOINTS).toContain(`${MODELS.editModify}`);
+    expect(FAL_ALLOWED_ENDPOINTS).toContain(`${MODELS.editModify}/**`);
   });
 
   it("retains fal objects for 24 h (AD-9)", () => {
