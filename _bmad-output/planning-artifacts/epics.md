@@ -143,6 +143,10 @@ L'utilisateur obtient la Pièce vide (effacement des zones du Masque validé), l
 Le climax : Génération FLF (première frame = Pièce vide, dernière frame = Photo originale), autoplay avec lueur or, prévisualisation, téléchargement MP4, « Nouvelle Génération ». Clôt le coût unitaire documenté (README COGS) et le déploiement démo. Valide SM-1.
 **FRs covered:** FR-10, FR-11, FR-12
 
+### Epic 5 : Édition d'image libre
+Un second mode, choisi à l'accueil : au lieu de la vidéo révélation, l'utilisateur édite librement une photo de façon **itérative** — dessiner une zone puis **enlever** un objet (bria eraser) ou **ajouter** un objet décrit au texte (flux-fill masqué, « pot de fleur » généré dans la zone). Chaque retouche devient la base de la suivante ; sortie = image téléchargeable, pas de vidéo. Réutilise l'éditeur de masque, l'upload/normalisation et le pattern pipeline. Voir `docs/plans/2026-07-13-image-edit-mode-design.md`.
+**FRs covered:** (nouveau mode hors PRD v1 initial — extension produit)
+
 ## Epic 1: Socle du Parcours & Upload
 
 Le « squelette qui marche ». À la fin de cet epic, un utilisateur ouvre RoomReveal sur desktop, est prévenu si son écran est trop petit, dépose une photo qui est validée et normalisée dans l'espace pixel canonique, et voit sa position dans le Parcours via le stepper. Toute l'infrastructure transverse (machine à états, stepper, Panneau d'attente, Bandeau d'erreur, sémantique d'invalidation) est en place et branchée sur le reducer, prête à accueillir les étapes aval.
@@ -548,3 +552,119 @@ So that je puisse présenter RoomReveal en séance et justifier son économie.
 **When** on déploie
 **Then** deux environnements existent — `dev` local (`next dev`) et instance démo auto-hébergée (`next start` ou Docker) **sur réseau privé** — ne différant que par la variable `FAL_KEY` (AR-DEPLOY, AR-PROXY)
 **And** aucune CI en v1 : lint, typecheck et tests Vitest sont passés localement avant push (AR-DEPLOY, AR-TESTS)
+
+## Epic 5: Édition d'image libre
+
+Un second mode d'usage de RoomReveal, choisi dès l'accueil. Au lieu du parcours vidéo, l'utilisateur édite librement une photo de manière itérative : il dessine une zone sur l'image de travail puis **enlève** un objet (effacement, bria eraser) ou **ajoute** un objet décrit au texte (remplissage génératif masqué, flux-fill — l'objet est généré à l'intérieur de la zone, le reste de l'image reste intact). Chaque retouche produit une nouvelle image qui devient la base de la suivante ; l'utilisateur télécharge l'image quand il est satisfait. Aucun rendu vidéo dans ce mode. L'epic réutilise l'éditeur de masque canvas, l'upload/normalisation canonique, le pattern d'adaptateur pipeline, `download-file` et les overlays d'attente/erreur. Modes strictement séparés (`mode` est un état au-dessus du parcours). Référence de design : `docs/plans/2026-07-13-image-edit-mode-design.md`.
+
+### Story 5.1: Écran d'accueil & sélection du mode
+
+As a utilisateur arrivant sur RoomReveal,
+I want choisir entre créer une vidéo révélation ou éditer une image,
+So that j'accède directement au flux correspondant à mon intention.
+
+**Acceptance Criteria:**
+
+**Given** l'application ouverte sur desktop et aucun mode encore choisi
+**When** la page est rendue
+**Then** un écran d'accueil présente deux cartes — « Créer la vidéo révélation » et « Éditer une image » — dans le langage visuel du DESIGN.md (surface-carte, anneau bordure→or au survol), l'action principale par carte étant claire (UX-DR1, UX-DR4)
+
+**Given** l'écran d'accueil
+**When** l'utilisateur choisit une carte
+**Then** le reducer fixe `mode` (`reveal` ou `edit`) via `SELECT_MODE` et positionne l'étape sur `upload`, sans perte ni état résiduel (AD-3, AD-11)
+
+**Given** le mode `reveal` sélectionné
+**When** le parcours se déroule
+**Then** le comportement des étapes `upload → mask → emptyRoom → video` est strictement inchangé (aucune régression), le titre display « Une photo. Une pièce qui se meuble toute seule. » restant associé à ce mode
+
+**Given** un mode sélectionné
+**When** l'utilisateur regarde l'indicateur de progression
+**Then** le `Stepper` s'adapte au mode (4 étapes en `reveal`, indicateur simplifié en `edit`) sans casser le contrat visuel du stepper existant
+
+### Story 5.2: Extraction d'un canvas de masque réutilisable (MaskCanvas)
+
+As a développeur de RoomReveal,
+I want extraire le cœur de l'éditeur de masque en un composant à source de fond paramétrable,
+So that le mode reveal et le mode édition partagent la même mécanique de masque sans duplication.
+
+**Acceptance Criteria:**
+
+**Given** le composant `mask-surface.tsx` actuel
+**When** on refactore
+**Then** un composant `MaskCanvas` encapsule le cœur (pinceau/gomme, taille réglable, zoom molette, pan espace+drag, undo/redo, raccourcis, buffer binaire canonique) avec une **source d'image de fond paramétrable** (AD-7, AD-13)
+
+**Given** le mode `reveal`
+**When** l'étape Masque s'affiche après refactor
+**Then** le comportement est identique à l'existant (fond = photo originale), validé par les tests `mask-surface` existants qui passent sans modification de comportement
+
+**Given** une source de fond arbitraire fournie à `MaskCanvas`
+**When** le composant est monté
+**Then** le buffer de masque est dimensionné à l'espace pixel canonique de cette image de fond (AR-PIXELS), la sémantique blanc=zone active restant inchangée (AD-7)
+
+### Story 5.3: Étape Éditeur & retrait d'objet (Enlever)
+
+As a utilisateur en mode édition,
+I want dessiner une zone sur ma photo et en effacer le contenu,
+So that je retire un objet indésirable et j'itère sur le résultat.
+
+**Acceptance Criteria:**
+
+**Given** le mode `edit` et une photo uploadée
+**When** l'étape `editor` s'affiche
+**Then** l'image de travail (`editBase`, au départ la photo normalisée) est présentée avec `MaskCanvas` par-dessus, et une action d'or unique « Appliquer » désactivée tant que le masque est vide
+
+**Given** une zone dessinée et l'opération « Enlever »
+**When** l'utilisateur clique « Appliquer »
+**Then** `runEdit` (dans `effects.ts`, seul orchestrateur — AD-12) upload paresseusement l'image de travail si nécessaire (`EDIT_BASE_UPLOADED`), encode le masque verbatim (`encodeMaskPng`, blanc=effacé — AD-7), appelle `editRemove` (bria eraser) et le Panneau d'attente affiche les phases nommées (queued→generating→finalizing, AD-14)
+
+**Given** un retrait réussi
+**When** le résultat revient
+**Then** `EDIT_APPLIED` remplace `editBase` par la nouvelle image, vide le masque et incrémente l'epoch ; l'`EditorSurface` mesure les dimensions réelles de la nouvelle image (`EDIT_BASE_MEASURED`) et réinitialise un masque vierge canonique, prêt pour la retouche suivante (boucle itérative, AD-11)
+
+**Given** une erreur pendant le retrait
+**When** l'appel échoue ou expire
+**Then** un `StepError` de step `edit` est levé (AD-8), le Bandeau d'erreur s'affiche avec message FR, `CLEAR_ERROR` le masque, et `editBase`/le masque restent intacts (retry = re-clic « Appliquer », pas de re-tir automatique)
+
+### Story 5.4: Ajout d'objet par texte (Ajouter)
+
+As a utilisateur en mode édition,
+I want dessiner une zone, décrire un objet au texte et l'y faire apparaître,
+So that j'enrichis la pièce (« pot de fleur », « tableau », …) avec un contrôle spatial précis.
+
+**Acceptance Criteria:**
+
+**Given** l'étape `editor`
+**When** l'utilisateur bascule sur l'opération « Ajouter »
+**Then** un champ texte apparaît et « Appliquer » reste désactivé tant que la zone est vide OU que le texte est vide
+
+**Given** une zone dessinée, l'opération « Ajouter » et un texte saisi
+**When** l'utilisateur clique « Appliquer »
+**Then** `runEdit` appelle `editAdd(imageUrl, maskUrl, prompt)` → `flux-pro/v1/fill` (remplissage génératif masqué : l'objet est généré dans la zone blanche, le reste de l'image reste pixel-identique), avec le même cycle attente/succès/erreur que le retrait
+
+**Given** le rôle de modèle « add »
+**When** on configure le pipeline
+**Then** `MODELS.editAdd = "fal-ai/flux-pro/v1/fill"` est déclaré swappable avec `TIMEOUTS_MS.editAdd` et l'endpoint dans `FAL_ALLOWED_ENDPOINTS` (`/**` + exact), `@fal-ai/client` restant confiné à `src/pipeline/` (AD-5, AD-4)
+
+**Given** le risque de qualité d'insertion (cohérence lumière/perspective)
+**When** avant de verrouiller le modèle
+**Then** un bench live (flux-fill vs `bria/genfill`) est réalisé sur une vraie photo et le gagnant est câblé, la méthode et le résultat étant documentés (bench-gate, cf. précédent 3.4)
+
+### Story 5.5: Téléchargement de l'image & nouvelle édition
+
+As a utilisateur en mode édition,
+I want télécharger l'image éditée et repartir sur une nouvelle photo,
+So that je récupère mon résultat et j'enchaîne sans confusion ni perte accidentelle.
+
+**Acceptance Criteria:**
+
+**Given** une image de travail éditée
+**When** l'utilisateur clique « Télécharger l'image »
+**Then** l'image courante est téléchargée via `download-file.ts` (fetch→blob→URL objet→ancre `download`, GET fal direct sans re-hébergement, AD-4/AD-9), avec état occupé et erreur inline
+
+**Given** l'étape `editor`
+**When** l'utilisateur clique « Nouvelle image »
+**Then** si l'image n'a pas été téléchargée une confirmation est demandée avant de repartir d'une zone d'upload vierge en conservant `mode:"edit"` (`RESET_EDIT`, epoch incrémenté, `editBase`/masque remis à zéro), sinon le retour est direct (UX-DR16)
+
+**Given** une édition en cours (au-delà de l'accueil/upload)
+**When** l'utilisateur rafraîchit ou ferme l'onglet
+**Then** `beforeunload` avertit que le travail en cours sera perdu (UX-DR15, pas de reprise en v1)
