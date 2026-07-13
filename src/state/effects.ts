@@ -1,6 +1,7 @@
-import { DETECT_BACKEND, autoEmptyRoom, detect, detectLocal, editAdd, editRemove, inpaint, pointSegment, pointSegmentLocal, uploadArtifact, video } from "@/pipeline";
+import { DETECT_BACKEND, autoEmptyRoom, buildModifyPrompt, detect, detectLocal, editAdd, editModify, editRemove, findTexture, inpaint, pointSegment, pointSegmentLocal, resolveTextureUrl, uploadArtifact, video } from "@/pipeline";
+import type { EditResult } from "@/pipeline";
 import { encodeMaskPng } from "@/lib/mask-encode";
-import { isBufferEmpty, unionBuffers } from "@/lib/mask-buffer";
+import { isBufferEmpty } from "@/lib/mask-buffer";
 import { decodeMaskToBuffer } from "@/lib/mask-decode";
 import type { GenerationAction } from "./reducer";
 import { isStepError, makeStepError } from "./step-error";
@@ -171,18 +172,28 @@ export async function runAutoEmptyRoom(
  * bumped by EDIT_APPLIED or signal aborted). Failures become a retryable
  * SET_ERROR of step "edit" (AD-8) — retry is a fresh « Appliquer » click, not an
  * entry effect. AR-LAYERS: the pipeline call lives here. "add" (Story 5.4) routes
- * to editAdd (flux fill) with the text prompt; "remove" to editRemove (bria).
+ * to editAdd (flux fill) with the text prompt; "remove" to editRemove (bria);
+ * "modify" (texture bank) to editModify (flux-general) with a resolved texture URL
+ * and/or a composed recolor prompt.
  */
 export async function runEdit(
   state: Generation,
   dispatch: Dispatch,
-  // "remove" → bria eraser (Story 5.3); "add" → flux fill with `prompt` (Story 5.4).
+  // "remove" → bria eraser (Story 5.3); "add" → flux fill with `prompt` (Story
+  // 5.4); "modify" → flux-general with a texture reference and/or instruction.
   {
     operation,
     prompt,
+    textureId,
+    instruction,
     signal,
     isStale,
-  }: RunContext & { operation: "remove" | "add"; prompt?: string },
+  }: RunContext & {
+    operation: "remove" | "add" | "modify";
+    prompt?: string;
+    textureId?: string;
+    instruction?: string;
+  },
 ): Promise<void> {
   const editBase = state.editBase;
   const buffer = state.maskDraft?.buffer;
@@ -192,11 +203,17 @@ export async function runEdit(
   // Add requires a non-empty description of the object to generate.
   const trimmedPrompt = prompt?.trim() ?? "";
   if (operation === "add" && trimmedPrompt === "") return;
+  // Modify requires at least a texture OR a free-text instruction to act on.
+  const trimmedInstruction = instruction?.trim() ?? "";
+  if (operation === "modify" && textureId === undefined && trimmedInstruction === "") {
+    return;
+  }
 
   const dead = () => signal.aborted || isStale();
-  const onPhase = (phase: WaitPhase) => {
-    if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase });
-  };
+  // Retouch feedback is the editor's inline pink-zone pulse, not the full-screen
+  // WaitPanel — phases are ignored here (no SET_WAIT_PHASE), mirroring
+  // runPointSegment. The masked zones breathe while the edit is in flight.
+  const onPhase = () => {};
 
   try {
     // Upload the work image once, lazily. First retouch: the uploaded blob.
@@ -204,7 +221,6 @@ export async function runEdit(
     let imageUrl = editBase.url;
     if (imageUrl === undefined) {
       if (editBase.blob === undefined) return; // nothing to upload/edit
-      if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase: "uploading" });
       imageUrl = await uploadArtifact(editBase.blob);
       if (dead()) return;
       dispatch({ type: "EDIT_BASE_UPLOADED", url: imageUrl });
@@ -216,10 +232,26 @@ export async function runEdit(
     const maskUrl = await uploadArtifact(png);
     if (dead()) return;
 
-    const result =
-      operation === "add"
-        ? await editAdd(imageUrl, maskUrl, trimmedPrompt, { signal, onPhase })
-        : await editRemove(imageUrl, maskUrl, { signal, onPhase });
+    let result: EditResult;
+    if (operation === "add") {
+      result = await editAdd(imageUrl, maskUrl, trimmedPrompt, { signal, onPhase });
+    } else if (operation === "modify") {
+      // Resolve the chosen texture (if any) to a fal URL — the static texture is
+      // uploaded at most once/session (memoized). No SET_WAIT_PHASE: the editor's
+      // inline pulse is the only feedback (mirrors add/remove/pointSegment).
+      let textureUrl: string | undefined;
+      if (textureId !== undefined) {
+        textureUrl = await resolveTextureUrl(textureId);
+        if (dead()) return;
+      }
+      const composed = buildModifyPrompt(
+        textureId !== undefined ? findTexture(textureId)?.prompt : undefined,
+        trimmedInstruction,
+      );
+      result = await editModify(imageUrl, maskUrl, { textureUrl, prompt: composed }, { signal, onPhase });
+    } else {
+      result = await editRemove(imageUrl, maskUrl, { signal, onPhase });
+    }
     if (dead()) return; // superseded or cancelled — drop the result
 
     dispatch({ type: "EDIT_APPLIED", image: result.image });
@@ -236,10 +268,11 @@ export async function runEdit(
  * Segments the object under a clicked point and unions it into the draft mask
  * (Story 5.6, AD-12). SAM point-prompt via `pointSegment` (fal) or
  * `pointSegmentLocal` (DETECT_BACKEND === "local") on the current work image,
- * then decodes the returned mask to a canonical binary buffer and ORs it with
- * the existing draft (unionBuffers) so successive clicks accumulate. Reuses
- * SET_MASK_BUFFER (no new action; the union/decode are effects, the reducer stays
- * pure — AD-3). Deliberately does NOT touch waitPhase: the editor shows its own
+ * then decodes the returned mask to a canonical binary buffer and dispatches
+ * UNION_MASK_BUFFER so the reducer ORs it into the LIVE draft (successive clicks
+ * accumulate; a concurrent brush stroke is not clobbered). Only the canvas decode
+ * lives here; the union runs in the pure reducer (AD-3). Deliberately does NOT
+ * touch waitPhase: the editor shows its own
  * inline pulse loader, not the full-screen WaitPanel. Lazy work-image upload
  * mirrors runEdit. A result is dropped once the run is dead (aborted/stale).
  * Failure → retryable SET_ERROR("pointSegment") (AD-8). AR-LAYERS.
@@ -269,7 +302,9 @@ export async function runPointSegment(
       let blob = editBase.blob;
       if (blob === undefined) {
         if (editBase.url === undefined) return;
-        blob = await (await fetch(editBase.url)).blob();
+        // Thread the signal so an abort mid-fetch doesn't leave the download
+        // running past cancellation (parity with the local adapters).
+        blob = await (await fetch(editBase.url, { signal })).blob();
         if (dead()) return;
       }
       result = await pointSegmentLocal(blob, point, { signal, onPhase });
@@ -288,10 +323,9 @@ export async function runPointSegment(
 
     const decoded = await decodeMaskToBuffer(result.mask, width, height);
     if (dead()) return;
-    const current = state.maskDraft?.buffer;
-    const next =
-      current !== undefined ? unionBuffers(current, decoded) : decoded;
-    dispatch({ type: "SET_MASK_BUFFER", buffer: next });
+    // Union in the reducer (against the LIVE buffer), not here: a brush stroke
+    // committed during the segmentation must not be clobbered by a stale union.
+    dispatch({ type: "UNION_MASK_BUFFER", buffer: decoded });
   } catch (err) {
     if (dead()) return; // a cancelled/superseded run must not paint an error
     dispatch({

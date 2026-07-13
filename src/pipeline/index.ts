@@ -9,6 +9,8 @@ export { inpaint } from "./inpaint";
 export { autoEmptyRoom } from "./empty-room-auto";
 export { editRemove, editAdd, editModify } from "./edit";
 export { resolveTextureUrl } from "./texture-upload";
+export { findTexture } from "./textures";
+export { buildModifyPrompt } from "./prompts";
 export { pointSegment } from "./point-segment";
 export { pointSegmentLocal } from "./point-segment-local";
 export { video } from "./video";

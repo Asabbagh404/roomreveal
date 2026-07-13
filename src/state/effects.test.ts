@@ -7,6 +7,10 @@ const inpaint = vi.fn();
 const autoEmptyRoom = vi.fn();
 const editRemove = vi.fn();
 const editAdd = vi.fn();
+const editModify = vi.fn();
+const resolveTextureUrl = vi.fn();
+const findTexture = vi.fn();
+const buildModifyPrompt = vi.fn();
 const pointSegment = vi.fn();
 const pointSegmentLocal = vi.fn();
 const videoFn = vi.fn();
@@ -19,6 +23,10 @@ vi.mock("@/pipeline", () => ({
   autoEmptyRoom: (...a: unknown[]) => autoEmptyRoom(...a),
   editRemove: (...a: unknown[]) => editRemove(...a),
   editAdd: (...a: unknown[]) => editAdd(...a),
+  editModify: (...a: unknown[]) => editModify(...a),
+  resolveTextureUrl: (...a: unknown[]) => resolveTextureUrl(...a),
+  findTexture: (...a: unknown[]) => findTexture(...a),
+  buildModifyPrompt: (...a: unknown[]) => buildModifyPrompt(...a),
   pointSegment: (...a: unknown[]) => pointSegment(...a),
   pointSegmentLocal: (...a: unknown[]) => pointSegmentLocal(...a),
   video: (...a: unknown[]) => videoFn(...a),
@@ -63,6 +71,10 @@ afterEach(() => {
   autoEmptyRoom.mockReset();
   editRemove.mockReset();
   editAdd.mockReset();
+  editModify.mockReset();
+  resolveTextureUrl.mockReset();
+  findTexture.mockReset();
+  buildModifyPrompt.mockReset();
   pointSegment.mockReset();
   pointSegmentLocal.mockReset();
   videoFn.mockReset();
@@ -834,6 +846,101 @@ describe("runEdit — add operation (Story 5.4, flux fill)", () => {
   });
 });
 
+describe("runEdit — modify operation (texture bank, flux-general)", () => {
+  const paintedMask = { data: new Uint8Array([0, 255, 0, 0]), width: 2, height: 2 };
+  function editState(overrides: Partial<Generation> = {}): Generation {
+    return {
+      step: "editor",
+      epoch: 1,
+      mode: "edit",
+      editBase: { url: "https://fal/work.jpg", width: 1024, height: 768 },
+      maskDraft: { detectedMaskUrl: null, buffer: paintedMask },
+      ...overrides,
+    };
+  }
+
+  it("modify with a texture: resolves the texture URL and calls editModify with it", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/mask.png");
+    resolveTextureUrl.mockResolvedValue("https://fal/texture.png");
+    findTexture.mockReturnValue({
+      id: "bois",
+      label: "Bois",
+      file: "/textures/bois.png",
+      prompt: "oak wood",
+    });
+    buildModifyPrompt.mockReturnValue("Change only the masked object. Apply this material to it: oak wood.");
+    editModify.mockResolvedValue({ image: "https://fal/mod.png" });
+    const dispatch = vi.fn();
+
+    await runEdit(editState(), dispatch, {
+      operation: "modify",
+      textureId: "bois",
+      signal,
+      isStale: notStale,
+    });
+
+    expect(resolveTextureUrl).toHaveBeenCalledWith("bois");
+    expect(editModify).toHaveBeenCalledWith(
+      "https://fal/work.jpg",
+      "https://fal/mask.png",
+      expect.objectContaining({
+        textureUrl: "https://fal/texture.png",
+        prompt: expect.stringMatching(/\S/),
+      }),
+      expect.anything(),
+    );
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "EDIT_APPLIED",
+      image: "https://fal/mod.png",
+    });
+  });
+
+  it("modify instruction-only (no texture): editModify with textureUrl undefined, prompt carries the instruction", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/mask.png");
+    buildModifyPrompt.mockReturnValue("Change only the masked object. navy");
+    editModify.mockResolvedValue({ image: "https://fal/mod.png" });
+    const dispatch = vi.fn();
+
+    await runEdit(editState(), dispatch, {
+      operation: "modify",
+      instruction: "navy",
+      signal,
+      isStale: notStale,
+    });
+
+    expect(resolveTextureUrl).not.toHaveBeenCalled();
+    expect(editModify).toHaveBeenCalledWith(
+      "https://fal/work.jpg",
+      "https://fal/mask.png",
+      expect.objectContaining({
+        textureUrl: undefined,
+        prompt: expect.stringContaining("navy"),
+      }),
+      expect.anything(),
+    );
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "EDIT_APPLIED",
+      image: "https://fal/mod.png",
+    });
+  });
+
+  it("is a no-op for modify with no texture and an empty instruction (never calls editModify)", async () => {
+    const dispatch = vi.fn();
+
+    await runEdit(editState(), dispatch, {
+      operation: "modify",
+      textureId: undefined,
+      instruction: "   ",
+      signal,
+      isStale: notStale,
+    });
+
+    expect(editModify).not.toHaveBeenCalled();
+    expect(resolveTextureUrl).not.toHaveBeenCalled();
+    expect(dispatch.mock.calls.some((c) => c[0].type === "EDIT_APPLIED")).toBe(false);
+  });
+});
+
 describe("runPointSegment (AD-12 click-to-select, Story 5.6)", () => {
   const buffer = { data: new Uint8Array(16), width: 4, height: 4 };
   const decoded = { data: new Uint8Array(16).fill(255), width: 4, height: 4 };
@@ -850,7 +957,7 @@ describe("runPointSegment (AD-12 click-to-select, Story 5.6)", () => {
     };
   }
 
-  it("segments the point, decodes + unions the mask, and dispatches SET_MASK_BUFFER", async () => {
+  it("segments the point, decodes the mask, and dispatches UNION_MASK_BUFFER (union runs in the reducer)", async () => {
     pointSegment.mockResolvedValue({ mask: "https://fal/objmask.png" });
     decodeMaskToBuffer.mockResolvedValue(decoded);
     const dispatch = vi.fn();
@@ -863,10 +970,13 @@ describe("runPointSegment (AD-12 click-to-select, Story 5.6)", () => {
       expect.anything(),
     );
     expect(decodeMaskToBuffer).toHaveBeenCalledWith("https://fal/objmask.png", 4, 4);
-    const call = dispatch.mock.calls.find((c) => c[0].type === "SET_MASK_BUFFER");
+    // The effect dispatches the DECODED mask; the reducer ORs it into the live
+    // buffer (so a concurrent brush stroke isn't clobbered by a stale union).
+    const call = dispatch.mock.calls.find((c) => c[0].type === "UNION_MASK_BUFFER");
     expect(call).toBeDefined();
-    // Union of a blank draft with an all-255 decode → all-255.
-    expect([...call![0].buffer.data].every((v: number) => v === 255)).toBe(true);
+    expect(call![0].buffer).toBe(decoded);
+    // The effect must NOT pre-compute the union itself.
+    expect(dispatch.mock.calls.some((c) => c[0].type === "SET_MASK_BUFFER")).toBe(false);
   });
 
   it("does NOT touch waitPhase (no full-screen WaitPanel — inline pulse instead)", async () => {
@@ -920,7 +1030,28 @@ describe("runPointSegment (AD-12 click-to-select, Story 5.6)", () => {
     stale = true;
     await p;
 
-    expect(dispatch.mock.calls.some((c) => c[0].type === "SET_MASK_BUFFER")).toBe(false);
+    expect(dispatch.mock.calls.some((c) => c[0].type === "UNION_MASK_BUFFER")).toBe(false);
+  });
+
+  it("does not dispatch when the signal is already aborted (AD-12)", async () => {
+    pointSegment.mockResolvedValue({ mask: "https://fal/objmask.png" });
+    decodeMaskToBuffer.mockResolvedValue(decoded);
+    const dispatch = vi.fn();
+    const aborted = new AbortController();
+    aborted.abort();
+
+    await runPointSegment(segState(), dispatch, {
+      x: 1,
+      y: 1,
+      signal: aborted.signal,
+      isStale: notStale,
+    });
+
+    expect(
+      dispatch.mock.calls.some(
+        (c) => c[0].type === "UNION_MASK_BUFFER" || c[0].type === "SET_ERROR",
+      ),
+    ).toBe(false);
   });
 
   it("maps a failure to a retryable SET_ERROR of step pointSegment", async () => {
