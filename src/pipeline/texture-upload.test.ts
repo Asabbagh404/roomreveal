@@ -17,7 +17,7 @@ afterEach(() => {
 
 describe("resolveTextureUrl", () => {
   it("fetches the file, uploads it once, and memoizes the URL", async () => {
-    fetchMock.mockResolvedValue({ blob: () => Promise.resolve(new Blob(["x"])) });
+    fetchMock.mockResolvedValue({ ok: true, blob: () => Promise.resolve(new Blob(["x"])) });
     uploadArtifact.mockResolvedValue("https://fal/bois.png");
 
     const a = await resolveTextureUrl("bois");
@@ -32,5 +32,14 @@ describe("resolveTextureUrl", () => {
   it("throws a retryable edit StepError for an unknown texture id", async () => {
     const err = await resolveTextureUrl("nope").catch((e) => e);
     expect(err).toMatchObject({ step: "edit", retryable: true });
+  });
+
+  it("re-attempts after a failed upload (cache eviction)", async () => {
+    fetchMock.mockResolvedValue({ ok: true, blob: () => Promise.resolve(new Blob(["x"])) });
+    uploadArtifact.mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce("https://fal/bois.png");
+    await expect(resolveTextureUrl("bois")).rejects.toBeTruthy();
+    const url = await resolveTextureUrl("bois");
+    expect(url).toBe("https://fal/bois.png");
+    expect(uploadArtifact).toHaveBeenCalledTimes(2);
   });
 });

@@ -19,6 +19,7 @@ export function resolveTextureUrl(id: string): Promise<string> {
     const texture = findTexture(id);
     if (!texture) throw makeStepError("edit", true);
     const res = await fetch(texture.file);
+    if (!res.ok) throw makeStepError("edit", true);
     const blob = await res.blob();
     return uploadArtifact(blob);
   })();
