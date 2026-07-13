@@ -8,7 +8,7 @@ vi.mock("./client", () => ({
   uploadArtifact: vi.fn(),
 }));
 
-import { editAdd, editRemove } from "./edit";
+import { editAdd, editModify, editRemove } from "./edit";
 
 const opts = { signal: new AbortController().signal, onPhase: vi.fn() };
 
@@ -152,5 +152,94 @@ describe("editAdd adapter (Story 5.4, flux-pro/v1/fill)", () => {
     const rejection = await editAdd("https://fal/w.jpg", "https://fal/m.png", "x", opts).catch((e) => e);
     expect(rejection).toMatchObject({ step: "edit", retryable: true });
     expect(rejection.userMessage).not.toContain("boom");
+  });
+});
+
+interface IpAdapterInput {
+  image_url?: string;
+  mask_image_url?: string;
+  scale?: number;
+}
+
+describe("editModify adapter (texture bank)", () => {
+  it("returns the first generated image URL (flux-general returns an images[] array)", async () => {
+    subscribe.mockResolvedValue({ data: { images: [{ url: "https://fal/modified.png" }] } });
+    const result = await editModify(
+      "https://fal/work.jpg",
+      "https://fal/mask.png",
+      { textureUrl: "https://fal/oak.jpg", prompt: "plancher chêne" },
+      opts,
+    );
+    expect(result.image).toBe("https://fal/modified.png");
+  });
+
+  it("references the texture via an ip-adapter carrying the mask when a textureUrl is given", async () => {
+    subscribe.mockResolvedValue({ data: { images: [{ url: "u" }] } });
+    await editModify(
+      "https://fal/work.jpg",
+      "https://fal/mask.png",
+      { textureUrl: "https://fal/oak.jpg", prompt: "plancher chêne" },
+      opts,
+    );
+    const [, cfg] = subscribe.mock.calls[0] as [
+      string,
+      { input: { image_url?: string; prompt?: string; ip_adapters?: IpAdapterInput[] } },
+    ];
+    expect(cfg.input.image_url).toBe("https://fal/work.jpg");
+    expect(cfg.input.prompt).toBe("plancher chêne");
+    expect(cfg.input.ip_adapters).toBeDefined();
+    const adapter = cfg.input.ip_adapters?.[0];
+    expect(adapter?.image_url).toBe("https://fal/oak.jpg");
+    expect(adapter?.mask_image_url).toBe("https://fal/mask.png");
+    expect(adapter?.scale).toBeTypeOf("number");
+  });
+
+  it("omits the ip-adapter entirely when no textureUrl is given (instruction-only recolor)", async () => {
+    subscribe.mockResolvedValue({ data: { images: [{ url: "u" }] } });
+    await editModify(
+      "https://fal/work.jpg",
+      "https://fal/mask.png",
+      { prompt: "repeindre en bleu" },
+      opts,
+    );
+    const [, cfg] = subscribe.mock.calls[0] as [
+      string,
+      { input: { image_url?: string; prompt?: string; ip_adapters?: IpAdapterInput[] } },
+    ];
+    expect(cfg.input.image_url).toBe("https://fal/work.jpg");
+    expect(cfg.input.prompt).toBe("repeindre en bleu");
+    expect(cfg.input.ip_adapters).toBeUndefined();
+  });
+
+  it("maps queue statuses to wait phases", async () => {
+    const onPhase = vi.fn();
+    subscribe.mockImplementation(
+      (_id: string, cfg: { onQueueUpdate: (u: { status: string }) => void }) => {
+        cfg.onQueueUpdate({ status: "IN_QUEUE" });
+        cfg.onQueueUpdate({ status: "IN_PROGRESS" });
+        cfg.onQueueUpdate({ status: "COMPLETED" });
+        return Promise.resolve({ data: { images: [{ url: "u" }] } });
+      },
+    );
+    await editModify(
+      "https://fal/work.jpg",
+      "https://fal/mask.png",
+      { textureUrl: "https://fal/oak.jpg", prompt: "x" },
+      { ...opts, onPhase },
+    );
+    expect(onPhase).toHaveBeenCalledWith("queued");
+    expect(onPhase).toHaveBeenCalledWith("generating");
+    expect(onPhase).toHaveBeenCalledWith("finalizing");
+  });
+
+  it("throws a retryable edit StepError when the model returns no image", async () => {
+    subscribe.mockResolvedValue({ data: { images: [] } });
+    const rejection = await editModify(
+      "https://fal/work.jpg",
+      "https://fal/mask.png",
+      { textureUrl: "https://fal/oak.jpg", prompt: "x" },
+      opts,
+    ).catch((e) => e);
+    expect(rejection).toMatchObject({ step: "edit", retryable: true });
   });
 });
