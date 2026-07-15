@@ -56,7 +56,12 @@ interface MaskCanvasProps {
    * active: a `point` click (SAM point-prompt → salient object) or a `box` drag
    * (→ the whole enclosed object). The host segments it and unions the mask. */
   onSelect?: (region: SelectRegion) => void;
-  /** True while the host's segmentation is in flight — drives the pulse loader. */
+  /** Called when the « détection auto » button (or the `A` key) fires: the host
+   * runs the whole-scene SAM furniture detection and unions the result. Shown in
+   * the toolbar only when provided (edit mode). */
+  onSelectAll?: () => void;
+  /** True while the host's segmentation is in flight — drives the pulse loader.
+   * Also disables/animates the « détection auto » button so it can't re-fire. */
   selecting?: boolean;
   /** True while a retouch is being applied — the pink mask zones pulse in place
    * of a full-screen loader (edit mode, Story 5.4 polish). */
@@ -85,6 +90,7 @@ export function MaskCanvas({
   backgroundAlt = "Votre photo",
   selectable = false,
   onSelect,
+  onSelectAll,
   selecting = false,
   pulsing = false,
   toolbarAction,
@@ -129,6 +135,7 @@ export function MaskCanvas({
   const historyRef = useRef(history);
   const bufferRef = useRef(buffer);
   const onSelectRef = useRef(onSelect);
+  const onSelectAllRef = useRef(onSelectAll);
   const selectableRef = useRef(selectable);
   const selectingRef = useRef(selecting);
   // Box-drag (Story 5.7): drag start/current in both buffer + viewport-local
@@ -145,6 +152,7 @@ export function MaskCanvas({
   useEffect(() => void (historyRef.current = history), [history]);
   useEffect(() => void (bufferRef.current = buffer), [buffer]);
   useEffect(() => void (onSelectRef.current = onSelect), [onSelect]);
+  useEffect(() => void (onSelectAllRef.current = onSelectAll), [onSelectAll]);
   useEffect(() => void (selectableRef.current = selectable), [selectable]);
   useEffect(() => void (selectingRef.current = selecting), [selecting]);
 
@@ -628,6 +636,11 @@ export function MaskCanvas({
         case "S":
           if (selectableRef.current) changeTool("select");
           break;
+        case "a":
+        case "A":
+          // « détection auto » — ignored while a segmentation is already running.
+          if (selectableRef.current && !selectingRef.current) onSelectAllRef.current?.();
+          break;
         case "[":
           setBrushSize((s) => stepBrush(s, -1));
           break;
@@ -771,6 +784,8 @@ export function MaskCanvas({
         tool={tool}
         size={brushSize}
         selectable={selectable}
+        onSelectAll={selectable ? onSelectAll : undefined}
+        selectAllBusy={selecting}
         canUndo={h !== null && canUndoH(h)}
         canRedo={h !== null && canRedoH(h)}
         onToolChange={setTool}

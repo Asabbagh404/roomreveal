@@ -92,6 +92,34 @@ describe("MaskCanvas click-to-select (Story 5.6)", () => {
     expect(screen.getByRole("button", { name: /Sélection/ })).toBeDefined();
   });
 
+  it("does not show « Détection auto » unless onSelectAll is provided", () => {
+    renderCanvas({ selectable: true });
+    expect(screen.queryByRole("button", { name: /Détection auto/ })).toBeNull();
+  });
+
+  it("« Détection auto » button invokes onSelectAll (host runs the SAM detect)", () => {
+    const onSelectAll = vi.fn();
+    renderCanvas({ selectable: true, onSelectAll });
+    fireEvent.click(screen.getByRole("button", { name: /Détection auto/ }));
+    expect(onSelectAll).toHaveBeenCalledOnce();
+  });
+
+  it("keyboard « A » invokes onSelectAll when selectable", () => {
+    const onSelectAll = vi.fn();
+    renderCanvas({ selectable: true, onSelectAll });
+    fireEvent.keyDown(document.body, { key: "a" });
+    expect(onSelectAll).toHaveBeenCalledOnce();
+  });
+
+  it("« Détection auto » is disabled and does not re-fire while selecting", () => {
+    const onSelectAll = vi.fn();
+    renderCanvas({ selectable: true, onSelectAll, selecting: true });
+    const btn = screen.getByRole("button", { name: /Détection auto/ }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    fireEvent.keyDown(document.body, { key: "a" });
+    expect(onSelectAll).not.toHaveBeenCalled();
+  });
+
   it("in select mode a click (no drag) emits a point region and commits no stroke", () => {
     const onCommit = vi.fn();
     const onSelect = vi.fn();

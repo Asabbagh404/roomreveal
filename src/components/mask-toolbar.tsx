@@ -1,6 +1,6 @@
 "use client";
 
-import { Brush, Eraser, MousePointerClick, Redo2, Undo2 } from "lucide-react";
+import { Brush, Eraser, Loader2, MousePointerClick, Redo2, Sparkles, Undo2 } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { MAX_BRUSH, MIN_BRUSH } from "@/lib/mask-tools";
@@ -12,6 +12,14 @@ interface MaskToolbarProps {
   size: number;
   /** Shows the click-to-select tool (Story 5.6, edit mode only). */
   selectable?: boolean;
+  /** Runs the whole-scene « détection auto » (SAM furniture detection) in one
+   * action (edit mode). When provided (and `selectable`), a magic-wand button
+   * appears next to the select tool — the edit analog of the Masque step's
+   * automatic detect-all pass. */
+  onSelectAll?: () => void;
+  /** True while the detection is running: the button shows a spinner and is
+   * disabled so it can't re-fire mid-run. */
+  selectAllBusy?: boolean;
   canUndo: boolean;
   canRedo: boolean;
   onToolChange: (tool: MaskTool) => void;
@@ -34,6 +42,8 @@ export function MaskToolbar({
   tool,
   size,
   selectable = false,
+  onSelectAll,
+  selectAllBusy = false,
   canUndo,
   canRedo,
   onToolChange,
@@ -43,7 +53,7 @@ export function MaskToolbar({
   action,
 }: MaskToolbarProps) {
   return (
-    <div className="flex w-full max-w-md items-center gap-4 rounded-lg border border-bordure bg-surface-elevee px-4 py-3">
+    <div className="flex w-full max-w-2xl items-center gap-4 rounded-lg border border-bordure bg-surface-elevee px-4 py-3">
       <div className="flex gap-1" role="group" aria-label="Outil">
         {selectable && (
           <ToolButton
@@ -53,6 +63,22 @@ export function MaskToolbar({
           >
             <MousePointerClick className="size-4" aria-hidden />
           </ToolButton>
+        )}
+        {selectable && onSelectAll !== undefined && (
+          <button
+            type="button"
+            aria-label="Détection auto des meubles de la cuisine (A)"
+            title="Détection auto des meubles de la cuisine (A)"
+            onClick={onSelectAll}
+            disabled={selectAllBusy}
+            className="flex size-9 items-center justify-center rounded-md text-texte-secondaire transition-colors hover:bg-bordure disabled:pointer-events-none disabled:opacity-50"
+          >
+            {selectAllBusy ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : (
+              <Sparkles className="size-4" aria-hidden />
+            )}
+          </button>
         )}
         <ToolButton
           active={tool === "brush"}
@@ -70,7 +96,7 @@ export function MaskToolbar({
         </ToolButton>
       </div>
 
-      <label className="flex flex-1 items-center gap-3 text-sm text-texte-secondaire">
+      <label className="flex min-w-40 flex-1 items-center gap-3 text-sm text-texte-secondaire">
         <span className="sr-only">Taille de l’outil</span>
         <Slider
           aria-label="Taille de l’outil"

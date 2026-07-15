@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Download, ImagePlus } from "lucide-react";
 import { useGeneration } from "@/state/generation-context";
-import { runEdit, runPointSegment } from "@/state/effects";
+import { runDetectSelect, runEdit, runPointSegment } from "@/state/effects";
 import { makeStepError } from "@/state/step-error";
 import { createBlankBuffer, isBufferEmpty, type SelectRegion } from "@/lib/mask-buffer";
 import { downloadFile } from "@/lib/download-file";
@@ -179,6 +179,29 @@ export function EditorSurface() {
     },
     [state, dispatch],
   );
+
+  // « Détection auto » (texture bank): runs the same whole-scene SAM furniture
+  // detection as the Masque step on the work image and unions every detected
+  // element into the draft in one action — the edit analog of the reveal flow's
+  // automatic detect-all. Shares the `selecting` guard/loader with click-select
+  // (one segmentation at a time); the result reveals + is undoable like a select.
+  const handleDetectAll = useCallback(async () => {
+    if (selectingRef.current) return; // one segmentation at a time
+    selectingRef.current = true;
+    setSelecting(true);
+    const controller = new AbortController();
+    selectControllerRef.current = controller;
+    const startEpoch = epochRef.current;
+    try {
+      await runDetectSelect(state, dispatch, {
+        signal: controller.signal,
+        isStale: () => epochRef.current !== startEpoch,
+      });
+    } finally {
+      selectingRef.current = false;
+      if (mountedRef.current) setSelecting(false);
+    }
+  }, [state, dispatch]);
 
   const hasZone = buffer !== undefined && !isBufferEmpty(buffer);
   // « Enlever » only needs a zone; « Ajouter » also needs a description; « Modifier »
@@ -357,6 +380,7 @@ export function EditorSurface() {
             backgroundAlt="Image de travail"
             selectable
             onSelect={handleSelect}
+            onSelectAll={handleDetectAll}
             selecting={selecting}
             pulsing={applying}
             toolbarAction={

@@ -349,6 +349,71 @@ export async function runPointSegment(
 }
 
 /**
+ * Edit-mode « détection auto » (texture bank): runs the SAME SAM 3 furniture
+ * detection as the Masque step (runDetect) but on the WORK image, and unions the
+ * whole-scene result into the live edit draft. detect() returns a single mask
+ * that already unions every detected kitchen-furniture instance (compose-mask),
+ * so one UNION_MASK_BUFFER selects the entire kitchen at once — the edit analog
+ * of what the reveal flow does automatically on entry. Image resolution mirrors
+ * runPointSegment (lazy fal upload of the work image, or the local blob). A null
+ * mask is SAM's "no furniture found" signal (FR-16) → no-op, so the canvas shows
+ * the brief "nothing landed" blip. Feedback is the editor's inline loader (no
+ * SET_WAIT_PHASE). Dropped when dead; failure → retryable SET_ERROR. AR-LAYERS.
+ */
+export async function runDetectSelect(
+  state: Generation,
+  dispatch: Dispatch,
+  { signal, isStale }: RunContext,
+): Promise<void> {
+  const editBase = state.editBase;
+  if (editBase === undefined) return;
+  const width = editBase.width;
+  const height = editBase.height;
+  if (width === undefined || height === undefined) return; // dims not measured
+
+  const dead = () => signal.aborted || isStale();
+  const onPhase = () => {}; // editor uses its own inline pulse loader
+
+  try {
+    let result;
+    if (DETECT_BACKEND === "local") {
+      // Local Grounded-SAM needs the image bytes: the uploaded blob, or fetch the
+      // previous result URL back into a blob when the blob is gone (parity with
+      // runPointSegment's local branch).
+      let blob = editBase.blob;
+      if (blob === undefined) {
+        if (editBase.url === undefined) return;
+        blob = await (await fetch(editBase.url, { signal })).blob();
+        if (dead()) return;
+      }
+      result = await detectLocal(blob, { signal, onPhase });
+    } else {
+      // fal needs a fal URL — upload the work image once, lazily (like runEdit).
+      let imageUrl = editBase.url;
+      if (imageUrl === undefined) {
+        if (editBase.blob === undefined) return;
+        imageUrl = await uploadArtifact(editBase.blob);
+        if (dead()) return;
+        dispatch({ type: "EDIT_BASE_UPLOADED", url: imageUrl });
+      }
+      result = await detect(imageUrl, { signal, onPhase });
+    }
+    if (dead()) return; // superseded or cancelled — drop the result
+
+    if (result.initialMask === null) return; // no furniture found — nothing to add
+    const decoded = await decodeMaskToBuffer(result.initialMask, width, height);
+    if (dead()) return;
+    dispatch({ type: "UNION_MASK_BUFFER", buffer: decoded });
+  } catch (err) {
+    if (dead()) return; // a cancelled/superseded run must not paint an error
+    dispatch({
+      type: "SET_ERROR",
+      error: isStepError(err) ? err : makeStepError("detect", true),
+    });
+  }
+}
+
+/**
  * Generates the Révélation (AD-12): runs the FLF video adapter on the empty room
  * (first frame) + canonical photo (last frame) and stores the MP4 URL
  * (VIDEO_SUCCEEDED). Both inputs are already fal URLs — emptyRoom is the inpaint

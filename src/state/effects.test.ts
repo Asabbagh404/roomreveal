@@ -51,7 +51,7 @@ vi.mock("@/lib/mask-decode", () => ({
   decodeMaskToBuffer: (...a: unknown[]) => decodeMaskToBuffer(...a),
 }));
 
-import { runAutoEmptyRoom, runDetect, runEdit, runInpaint, runPointSegment, runValidateMask, runVideo } from "./effects";
+import { runAutoEmptyRoom, runDetect, runDetectSelect, runEdit, runInpaint, runPointSegment, runValidateMask, runVideo } from "./effects";
 import type { Generation } from "./types";
 
 const paintedBuffer = { data: new Uint8Array([0, 255, 0, 0]), width: 2, height: 2 };
@@ -1109,6 +1109,99 @@ describe("runPointSegment (AD-12 click-to-select, Story 5.6)", () => {
     const err = dispatch.mock.calls.find((c) => c[0].type === "SET_ERROR");
     expect(err).toBeDefined();
     expect(err![0].error.step).toBe("pointSegment");
+    expect(err![0].error.retryable).toBe(true);
+  });
+});
+
+describe("runDetectSelect (edit-mode auto furniture detect, texture bank)", () => {
+  const buffer = { data: new Uint8Array(16), width: 4, height: 4 };
+  const decoded = { data: new Uint8Array(16).fill(255), width: 4, height: 4 };
+
+  function segState(overrides: Partial<Generation> = {}): Generation {
+    return {
+      step: "editor",
+      epoch: 1,
+      mode: "edit",
+      editBase: { url: "https://fal/work.png", width: 4, height: 4 },
+      maskDraft: { detectedMaskUrl: null, buffer },
+      ...overrides,
+    };
+  }
+
+  it("runs SAM detect on the work image, decodes, and dispatches UNION_MASK_BUFFER", async () => {
+    detect.mockResolvedValue({ initialMask: "https://fal/furniture.png", categories: [] });
+    decodeMaskToBuffer.mockResolvedValue(decoded);
+    const dispatch = vi.fn();
+
+    await runDetectSelect(segState(), dispatch, { signal, isStale: notStale });
+
+    expect(detect).toHaveBeenCalledWith("https://fal/work.png", expect.anything());
+    expect(decodeMaskToBuffer).toHaveBeenCalledWith("https://fal/furniture.png", 4, 4);
+    const call = dispatch.mock.calls.find((c) => c[0].type === "UNION_MASK_BUFFER");
+    expect(call).toBeDefined();
+    expect(call![0].buffer).toBe(decoded);
+    // Reuses the editor's inline loader — no full-screen WaitPanel.
+    expect(dispatch.mock.calls.some((c) => c[0].type === "SET_WAIT_PHASE")).toBe(false);
+  });
+
+  it("no-ops on « no furniture found » (null mask) without decoding or unioning", async () => {
+    detect.mockResolvedValue({ initialMask: null, categories: [] });
+    const dispatch = vi.fn();
+
+    await runDetectSelect(segState(), dispatch, { signal, isStale: notStale });
+
+    expect(decodeMaskToBuffer).not.toHaveBeenCalled();
+    expect(dispatch.mock.calls.some((c) => c[0].type === "UNION_MASK_BUFFER")).toBe(false);
+  });
+
+  it("lazily uploads the work image when only a blob is present (EDIT_BASE_UPLOADED)", async () => {
+    uploadArtifact.mockResolvedValue("https://fal/uploaded.png");
+    detect.mockResolvedValue({ initialMask: "https://fal/furniture.png", categories: [] });
+    decodeMaskToBuffer.mockResolvedValue(decoded);
+    const dispatch = vi.fn();
+
+    const state = segState({ editBase: { blob: new Blob(["w"]), width: 4, height: 4 } });
+    await runDetectSelect(state, dispatch, { signal, isStale: notStale });
+
+    expect(uploadArtifact).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenCalledWith({ type: "EDIT_BASE_UPLOADED", url: "https://fal/uploaded.png" });
+    expect(detect).toHaveBeenCalledWith("https://fal/uploaded.png", expect.anything());
+  });
+
+  it("is a no-op when editBase is missing or dims are not yet measured", async () => {
+    const dispatch = vi.fn();
+    await runDetectSelect(segState({ editBase: undefined }), dispatch, { signal, isStale: notStale });
+    await runDetectSelect(
+      segState({ editBase: { url: "https://fal/work.png" } }),
+      dispatch,
+      { signal, isStale: notStale },
+    );
+    expect(detect).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("drops the result without dispatch when the run goes stale mid-flight", async () => {
+    detect.mockResolvedValue({ initialMask: "https://fal/furniture.png", categories: [] });
+    decodeMaskToBuffer.mockResolvedValue(decoded);
+    const dispatch = vi.fn();
+    let stale = false;
+
+    const p = runDetectSelect(segState(), dispatch, { signal, isStale: () => stale });
+    stale = true;
+    await p;
+
+    expect(dispatch.mock.calls.some((c) => c[0].type === "UNION_MASK_BUFFER")).toBe(false);
+  });
+
+  it("maps a failure to a retryable SET_ERROR of step detect", async () => {
+    detect.mockRejectedValue(new Error("boom"));
+    const dispatch = vi.fn();
+
+    await runDetectSelect(segState(), dispatch, { signal, isStale: notStale });
+
+    const err = dispatch.mock.calls.find((c) => c[0].type === "SET_ERROR");
+    expect(err).toBeDefined();
+    expect(err![0].error.step).toBe("detect");
     expect(err![0].error.retryable).toBe(true);
   });
 });
