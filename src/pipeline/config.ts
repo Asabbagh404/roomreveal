@@ -24,14 +24,16 @@ export const MODELS = {
   // but that generative behavior is exactly what ADDING an object wants. Swappable
   // (bench-ready vs bria/genfill). Mask white = where the described object goes.
   editAdd: "fal-ai/flux-pro/v1/fill",
-  // Free-edit « Modifier » (texture bank): in-context multi-image editor. Applies
-  // the EXACT material shown in a reference image (2nd image_url) onto a target
-  // object in the working image (1st image_url). Replaced flux-general + IP-Adapter,
-  // which benched weak for material transfer (IP-Adapter only conditions global
-  // style — 2026-07-14). Kontext is MASKLESS: locality is prompt-steered; a future
-  // v2 may recomposite the result within the mask for strict locality. Swappable
-  // (kontext/max/multi trades cost for fidelity).
-  editModify: "fal-ai/flux-pro/kontext/multi",
+  // Free-edit « Modifier » (texture bank): FLUX.2 Klein edit — a multi-image
+  // instruction editor. Applies the EXACT material shown in a reference image (2nd
+  // image_url) onto a target object in the working image (1st). Progression
+  // (2026-07-14): flux-general + IP-Adapter benched weak (global style only), then
+  // flux-pro/kontext/multi pasted the swatch flat; FLUX.2 Klein renders the swatch
+  // as a real material far better. Same `{ image_urls, prompt }` contract as
+  // Kontext, so editModify is unchanged. MASKLESS — the adapter re-renders the full
+  // scene then composites the result within the mask for strict locality. Swappable
+  // (klein/4b = cheaper/faster, klein/9b = quality).
+  editModify: "fal-ai/flux-2/klein/4b/edit",
   // Point-prompt segmentation for click-to-select in the free editor (Story 5.6):
   // SAM's OTHER interface — a single click point → the mask of the object under it
   // (vs `detect`, which text-prompts the SAME family). Backend piloted by

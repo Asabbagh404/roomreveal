@@ -1,11 +1,6 @@
 import { isStepError, makeStepError } from "@/state/step-error";
 import { decodeMaskToBuffer } from "@/lib/mask-decode";
-import {
-  compositeWithinMask,
-  cropRegion,
-  imageSize,
-  maskBoundingBox,
-} from "@/lib/retexture-region";
+import { compositeMaskedOverlay, erodeMask, imageSize } from "@/lib/retexture-region";
 import { ARTIFACT_EXPIRES_IN_SECONDS, MODELS, TIMEOUTS_MS } from "./config";
 import { fal, uploadArtifact } from "./client";
 import type { AdapterOptions, EditResult } from "./types";
@@ -209,22 +204,29 @@ export async function runKontext(
 }
 
 /**
+ * Pixels the selection is shrunk by before compositing, to hide the material
+ * halo a loose/anti-aliased selection would otherwise leak around the object.
+ * Calibrate live: raise if a halo remains, lower if it eats the object's edge.
+ */
+const MASK_ERODE_PX = 3;
+
+/**
  * Free-edit MODIFY adapter (AD-5, AD-12, texture bank): applies an EXACT reference
  * texture (or a text instruction) to ONLY the user-selected object of the working
  * image, and returns the URL of the composited result. Kontext transfers a real
- * swatch far better than an IP-Adapter (benched weak, 2026-07-14) but is MASKLESS —
- * given the whole room it retextures the wrong surface (it put wood on the floor,
- * live 2026-07-14). So this bridges "exact texture" (needs a reference image →
- * Kontext) and "only my selection" (needs a mask → no fal model does both) with a
- * crop→edit→composite flow, all client-side from `imageUrl` + `maskUrl`:
- *   1. decode the mask to its bounding box (the selected object);
- *   2. CROP the working image to that box → Kontext only sees the object, so it
- *      can't wander onto the floor/walls;
- *   3. runKontext([crop, texture?], prompt) retextures just the crop;
- *   4. COMPOSITE the result back into the working image, gated by the mask, so only
- *      the selected pixels change (strict locality) — output at the working dims.
+ * swatch far better than an IP-Adapter (benched weak, 2026-07-14) but is MASKLESS.
+ * This bridges "exact texture" (needs a reference image → Kontext) and "only my
+ * selection" (needs a mask → no fal model does both) with a full-scene edit +
+ * masked composite, client-side from `imageUrl` + `maskUrl`:
+ *   1. runKontext([workingImage, texture?], prompt) re-renders the WHOLE scene —
+ *      cropping to the object first made Kontext PASTE the swatch flat (live
+ *      2026-07-14); the full scene keeps the object's 3D form/lighting so it maps
+ *      the swatch as a real material;
+ *   2. COMPOSITE that edit over the working image, gated by the mask, so only the
+ *      selected pixels change (strict locality) — output at the working dims.
  * `image_urls[1]` (texture) is present only when a texture is chosen; an
- * instruction-only recolor sends just the crop. Every failure ⇒ retryable edit
+ * instruction-only recolor sends just the working image. The mask discards any
+ * area Kontext changed outside the selection. Every failure ⇒ retryable edit
  * StepError (AD-8). @fal-ai/client is reached only through ./client.
  */
 export async function editModify(
@@ -235,27 +237,25 @@ export async function editModify(
 ): Promise<EditResult> {
   try {
     // The mask PNG is at the working image's canonical dims (AD-7); decode it back
-    // to a buffer to find the selected object's bounding box.
+    // to a buffer so we can keep only the selected pixels of Kontext's edit.
     const { width, height } = await imageSize(imageUrl);
     if (signal.aborted) throw makeStepError("edit", true);
     const buffer = await decodeMaskToBuffer(maskUrl, width, height);
-    const box = maskBoundingBox(buffer);
-    if (box === null) throw makeStepError("edit", true); // empty selection
+    // Pull the selection's edge inward a few px so the composite doesn't leak a
+    // material halo where a loose/anti-aliased selection overshot the object.
+    const tight = erodeMask(buffer, MASK_ERODE_PX);
 
-    // Crop to the selection so Kontext only ever sees the target object.
-    const cropBlob = await cropRegion(imageUrl, box);
-    if (signal.aborted) throw makeStepError("edit", true);
-    const cropUrl = await uploadArtifact(cropBlob);
-    if (signal.aborted) throw makeStepError("edit", true);
-
-    // Retexture the crop. Texture (if any) is the second image the prompt names.
-    const imageUrls = textureUrl ? [cropUrl, textureUrl] : [cropUrl];
+    // Full-scene edit (NOT a crop): Kontext keeps the object's 3D form, panels and
+    // lighting and applies the swatch as a real material. Cropping to the object
+    // invited a flat paste of the swatch (live 2026-07-14). Texture (if any) is the
+    // second image the prompt refers to.
+    const imageUrls = textureUrl ? [imageUrl, textureUrl] : [imageUrl];
     const retexturedUrl = await runKontext(imageUrls, prompt, { signal, onPhase });
     if (signal.aborted) throw makeStepError("edit", true);
 
-    // Paste the retextured object back, clipped to the mask → only the selection
-    // changes; the rest stays pixel-identical to the working image.
-    const finalBlob = await compositeWithinMask(imageUrl, retexturedUrl, buffer, box);
+    // Keep only the selected region of that edit → strict locality; the rest stays
+    // pixel-identical to the working image.
+    const finalBlob = await compositeMaskedOverlay(imageUrl, retexturedUrl, tight);
     if (signal.aborted) throw makeStepError("edit", true);
     const finalUrl = await uploadArtifact(finalBlob);
     return { image: finalUrl };

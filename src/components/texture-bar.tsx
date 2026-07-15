@@ -6,20 +6,29 @@ import { cn } from "@/lib/utils";
 interface TextureBarProps {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
+  /** Stack the chips in a scrollable column instead of a row (edit mode places
+   * the picker to the right of the image). */
+  vertical?: boolean;
 }
 
 /**
- * Horizontal, scrollable texture picker shown only under the « Modifier »
- * operation. First chip = « Aucune » (deselect → prompt-only modify). Selection
- * = or-lumineux ring. radiogroup semantics; usable with the mouse alone (NFR-3);
- * dark theme (surface-elevee / bordure). Thumbnails render the real PNGs.
+ * Texture picker shown only under the « Modifier » operation. First chip =
+ * « Aucune » (deselect → prompt-only modify). Selection = or-lumineux ring.
+ * radiogroup semantics; usable with the mouse alone (NFR-3); dark theme
+ * (surface-elevee / bordure). Thumbnails render the real PNGs. Horizontal +
+ * x-scroll by default; `vertical` stacks + y-scrolls (right-of-image column).
  */
-export function TextureBar({ selectedId, onSelect }: TextureBarProps) {
+export function TextureBar({ selectedId, onSelect, vertical = false }: TextureBarProps) {
   return (
     <div
       role="radiogroup"
       aria-label="Texture"
-      className="flex w-full gap-2 overflow-x-auto pb-1"
+      className={cn(
+        "flex gap-2",
+        vertical
+          ? "min-h-0 flex-1 flex-col overflow-y-auto pr-1"
+          : "w-full overflow-x-auto pb-1",
+      )}
     >
       <Chip
         label="Aucune"

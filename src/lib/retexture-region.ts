@@ -35,6 +35,37 @@ export function maskBoundingBox(buffer: MaskBuffer): Box | null {
 }
 
 /**
+ * Erodes a binary mask by `radius` pixels (Chebyshev): a pixel stays on only if
+ * every pixel within the square of that radius is on (out-of-bounds counts as
+ * off). Pure — pulls the selection's edge inward so the retexture composite does
+ * not leak a halo where a loose/anti-aliased selection overshot the object (live
+ * 2026-07-14). `radius <= 0` returns a copy unchanged. Leaf layer (src/lib/).
+ */
+export function erodeMask(buffer: MaskBuffer, radius: number): MaskBuffer {
+  const { data, width, height } = buffer;
+  if (radius <= 0) return { data: new Uint8Array(data), width, height };
+  const out = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (data[y * width + x] < 128) continue; // off stays off
+      let keep = true;
+      for (let dy = -radius; dy <= radius && keep; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height || data[ny * width + nx] < 128) {
+            keep = false;
+            break;
+          }
+        }
+      }
+      if (keep) out[y * width + x] = 255;
+    }
+  }
+  return { data: out, width, height };
+}
+
+/**
  * Fetches an image URL into an ImageBitmap. fal result URLs are cross-origin but
  * send permissive CORS (proven for downloadFile/mask-decode), so the bitmap is
  * not tainted and its pixels are readable. Browser-only.
@@ -82,6 +113,44 @@ export async function cropRegion(imageUrl: string, box: Box): Promise<Blob> {
   const [canvas, ctx] = newCanvas(box.width, box.height);
   ctx.drawImage(bmp, box.x, box.y, box.width, box.height, 0, 0, box.width, box.height);
   return toPngBlob(canvas);
+}
+
+/**
+ * Overlays a full-scene edit onto the base image ONLY where the mask is on
+ * (>=128), pixel-for-pixel at the SAME coordinates — every other pixel stays the
+ * base's. Used by the full-scene « Modifier » path: Kontext re-renders the WHOLE
+ * working image (so it keeps the object's 3D form/lighting and applies the swatch
+ * as a real material instead of a flat paste), and this keeps only the selected
+ * region of that edit. `overlayUrl` is scaled to the base/mask canonical dims
+ * before sampling, so a reframed Kontext output still aligns 1:1. Output PNG is at
+ * the mask's canonical dims. Browser-only (canvas); live-verify. Leaf (src/lib/).
+ */
+export async function compositeMaskedOverlay(
+  baseUrl: string,
+  overlayUrl: string,
+  buffer: MaskBuffer,
+): Promise<Blob> {
+  const [base, overlay] = await Promise.all([loadBitmap(baseUrl), loadBitmap(overlayUrl)]);
+  const { width: W, height: H, data: mask } = buffer;
+
+  const [out, octx] = newCanvas(W, H);
+  octx.drawImage(base, 0, 0, W, H);
+  const outData = octx.getImageData(0, 0, W, H);
+
+  const [, vctx] = newCanvas(W, H);
+  vctx.drawImage(overlay, 0, 0, W, H); // scale the (possibly reframed) edit to canonical
+  const overlayData = vctx.getImageData(0, 0, W, H).data;
+
+  for (let i = 0; i < mask.length; i++) {
+    if (mask[i] < 128) continue; // outside the selection → keep base
+    const o = i * 4;
+    outData.data[o] = overlayData[o];
+    outData.data[o + 1] = overlayData[o + 1];
+    outData.data[o + 2] = overlayData[o + 2];
+    outData.data[o + 3] = 255;
+  }
+  octx.putImageData(outData, 0, 0);
+  return toPngBlob(out);
 }
 
 /**

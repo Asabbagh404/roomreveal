@@ -338,44 +338,60 @@ export function EditorSurface() {
         )}
       </div>
 
-      {displayed !== null ? (
-        <MaskCanvas
-          backgroundUrl={displayed.url}
-          width={displayed.width}
-          height={displayed.height}
-          // Only pass the draft once it matches the shown image (post-swap,
-          // seeded at the new dims). During the hold window the buffer is still
-          // undefined (EDIT_APPLIED cleared it) → the overlay stays empty on the
-          // held frame rather than showing a stale mask.
-          buffer={buffer}
-          epoch={state.epoch}
-          onCommit={(next) => dispatch({ type: "SET_MASK_BUFFER", buffer: next })}
-          backgroundAlt="Image de travail"
-          selectable
-          onSelect={handleSelect}
-          selecting={selecting}
-          pulsing={applying}
-          toolbarAction={
-            // « Appliquer » (Story 5.4): a tall gold check button to the right of
-            // the mask toolbar (same height, items-stretch). Disabled until the
-            // operation's inputs are valid; the wave on the zone is the progress.
-            <button
-              type="button"
-              aria-label="Appliquer"
-              title="Appliquer"
-              disabled={!canApply || applying}
-              onClick={handleApply}
-              className="flex h-9 w-14 shrink-0 items-center justify-center rounded-md bg-or-lumineux text-or-lumineux-foreground transition-colors hover:bg-or-lumineux/80 disabled:pointer-events-none disabled:opacity-50"
-            >
-              <Check className="size-5" aria-hidden />
-            </button>
-          }
-        />
-      ) : (
-        <div className="w-full max-w-3xl overflow-hidden rounded-lg border border-bordure">
-          <div className="aspect-[4/3] w-full bg-surface-elevee" aria-hidden />
-        </div>
-      )}
+      {/* Image, with (in « Modifier ») a vertical texture picker floated into the
+          right margin. The picker is absolutely positioned so it NEVER resizes
+          the image — the image keeps its max-w-3xl dimensions in every mode. */}
+      <div className="relative flex w-full max-w-3xl flex-col items-center gap-4">
+        {displayed !== null ? (
+          <MaskCanvas
+            backgroundUrl={displayed.url}
+            width={displayed.width}
+            height={displayed.height}
+            // Only pass the draft once it matches the shown image (post-swap,
+            // seeded at the new dims). During the hold window the buffer is
+            // still undefined (EDIT_APPLIED cleared it) → the overlay stays
+            // empty on the held frame rather than showing a stale mask.
+            buffer={buffer}
+            epoch={state.epoch}
+            onCommit={(next) => dispatch({ type: "SET_MASK_BUFFER", buffer: next })}
+            backgroundAlt="Image de travail"
+            selectable
+            onSelect={handleSelect}
+            selecting={selecting}
+            pulsing={applying}
+            toolbarAction={
+              // « Appliquer » (Story 5.4): a gold check button integrated at the
+              // right end of the mask toolbar. Disabled until the operation's
+              // inputs are valid; the wave on the zone is progress.
+              <button
+                type="button"
+                aria-label="Appliquer"
+                title="Appliquer"
+                disabled={!canApply || applying}
+                onClick={handleApply}
+                className="flex h-9 w-14 shrink-0 items-center justify-center rounded-md bg-or-lumineux text-or-lumineux-foreground transition-colors hover:bg-or-lumineux/80 disabled:pointer-events-none disabled:opacity-50"
+              >
+                <Check className="size-5" aria-hidden />
+              </button>
+            }
+          />
+        ) : (
+          <div className="w-full overflow-hidden rounded-lg border border-bordure">
+            <div className="aspect-[4/3] w-full bg-surface-elevee" aria-hidden />
+          </div>
+        )}
+
+        {operation === "modify" && (
+          <div className="absolute inset-y-0 left-full ml-3 flex w-20 flex-col gap-2">
+            <span className="text-carton-titre text-texte-secondaire">Texture</span>
+            <TextureBar
+              vertical
+              selectedId={selectedTextureId}
+              onSelect={setSelectedTextureId}
+            />
+          </div>
+        )}
+      </div>
 
       <div className="flex w-full max-w-md flex-col items-center gap-3">
         {/* Operation toggle (Story 5.4): a secondary control, not a second gold
@@ -429,21 +445,14 @@ export function EditorSurface() {
         )}
 
         {operation === "modify" && (
-          <div className="flex w-full flex-col gap-2">
-            <span className="text-carton-titre text-texte-secondaire">Texture</span>
-            <TextureBar
-              selectedId={selectedTextureId}
-              onSelect={setSelectedTextureId}
-            />
-            <input
-              type="text"
-              value={instruction}
-              onChange={(e) => setInstruction(e.target.value)}
-              placeholder="plus foncé, bleu marine, mat… (optionnel si texture)"
-              aria-label="Modification à appliquer"
-              className="w-full rounded-lg border border-bordure bg-surface-carte px-4 py-2 text-texte-principal placeholder:text-texte-secondaire focus:border-or-lumineux focus:outline-none"
-            />
-          </div>
+          <input
+            type="text"
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            placeholder="plus foncé, bleu marine, mat… (optionnel si texture)"
+            aria-label="Modification à appliquer"
+            className="w-full rounded-lg border border-bordure bg-surface-carte px-4 py-2 text-texte-principal placeholder:text-texte-secondaire focus:border-or-lumineux focus:outline-none"
+          />
         )}
 
         {/* « Appliquer » moved next to the mask toolbar (a gold check button);
@@ -451,9 +460,7 @@ export function EditorSurface() {
         <p className="text-center text-sm text-texte-secondaire">
           {operation === "add"
             ? "Dessinez où placer l’objet, décrivez-le, puis appliquez."
-            : operation === "modify"
-              ? "Sélectionnez l’élément, choisissez une texture et/ou décrivez le changement, puis appliquez."
-              : ""}
+            : ""}
           {retouchCount > 0 ? ` · Retouche n° ${retouchCount}` : ""}
         </p>
       </div>

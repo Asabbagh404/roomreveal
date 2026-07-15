@@ -153,9 +153,11 @@ export function buildModifyPrompt(
   const ins = instruction?.trim();
   const parts: string[] = [];
   if (tex) {
-    // Kontext multi-image: the texture swatch is the SECOND input image.
+    // Kontext multi-image: the texture swatch is the SECOND input image. Kontext
+    // tends to PASTE that image flat unless told firmly it is only a material
+    // sample to re-render the object's surfaces with (live 2026-07-14).
     parts.push(
-      `Retexture the target object with the material shown in the second image (${tex}): map that material's colour, pattern and finish onto the object, following its existing shape, edges and perspective.`,
+      `The second image is a MATERIAL SAMPLE (a ${tex} swatch), not a picture to insert. Re-render the surfaces of the object in the first image as if they were physically made of that material: wrap the material across the object following its real shape, panels, edges, thickness and perspective, and preserve the object's existing lighting, shadows, highlights and reflections. Do NOT paste, overlay, stretch or place the second image as a flat rectangle — use it only as the surface material.`,
     );
   }
   if (ins) parts.push(ins);
