@@ -156,8 +156,13 @@ export function buildModifyPrompt(
     // Kontext multi-image: the texture swatch is the SECOND input image. Kontext
     // tends to PASTE that image flat unless told firmly it is only a material
     // sample to re-render the object's surfaces with (live 2026-07-14).
+    // The placeholder sentence pairs with editModify's ZeST-inspired init: the
+    // adapter pre-tints the target object to the swatch's mean color before the
+    // call (plain ZeST grayscale made Klein keep the gray, live 2026-07-15), so
+    // the prompt must say the flat tint is a base coat to finish with the
+    // sample's full material, keeping the shading as lighting cues.
     parts.push(
-      `The second image is a MATERIAL SAMPLE (a ${tex} swatch), not a picture to insert. Re-render the surfaces of the object in the first image as if they were physically made of that material: wrap the material across the object following its real shape, panels, edges, thickness and perspective, and preserve the object's existing lighting, shadows, highlights and reflections. Do NOT paste, overlay, stretch or place the second image as a flat rectangle — use it only as the surface material.`,
+      `The second image is a MATERIAL SAMPLE (a ${tex} swatch), not a picture to insert. The target object in the first image has been deliberately pre-painted with a flat placeholder tint of that material's base color: treat its current flat color as an unfinished base coat, and use its shading only as lighting cues (shadows and highlights). Re-render the surfaces of that object as if they were physically made of the sample's material, with the sample's exact colors, pattern, grain and finish: wrap the material across the object following its real shape, panels, edges, thickness and perspective, and preserve the object's existing lighting, shadows, highlights and reflections. Do NOT paste, overlay, stretch or place the second image as a flat rectangle — use it only as the surface material.`,
     );
   }
   if (ins) parts.push(ins);

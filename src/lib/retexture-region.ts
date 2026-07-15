@@ -115,6 +115,80 @@ export async function cropRegion(imageUrl: string, box: Box): Promise<Blob> {
   return toPngBlob(canvas);
 }
 
+/** An opaque RGB color (0–255 channels). */
+export interface Rgb {
+  r: number;
+  g: number;
+  b: number;
+}
+
+/** Side of the square canvas meanImageColor averages over — 64² px is plenty. */
+const MEAN_SAMPLE_SIZE = 64;
+
+/**
+ * Mean RGB of an image URL, computed by rasterizing it onto a small canvas and
+ * averaging every pixel. Used to read a texture swatch's BASE COLOR so the
+ * « Modifier » init can anchor the selected object to the right hue. Browser-only
+ * (canvas); live-verify. Leaf layer (src/lib/).
+ */
+export async function meanImageColor(url: string): Promise<Rgb> {
+  const bmp = await loadBitmap(url);
+  const [, ctx] = newCanvas(MEAN_SAMPLE_SIZE, MEAN_SAMPLE_SIZE);
+  ctx.drawImage(bmp, 0, 0, MEAN_SAMPLE_SIZE, MEAN_SAMPLE_SIZE);
+  const { data } = ctx.getImageData(0, 0, MEAN_SAMPLE_SIZE, MEAN_SAMPLE_SIZE);
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  const n = MEAN_SAMPLE_SIZE * MEAN_SAMPLE_SIZE;
+  for (let i = 0; i < n; i++) {
+    r += data[i * 4];
+    g += data[i * 4 + 1];
+    b += data[i * 4 + 2];
+  }
+  return { r: Math.round(r / n), g: Math.round(g / n), b: Math.round(b / n) };
+}
+
+/**
+ * Color-prior swap for the « Modifier » texture path, a ZeST-inspired init
+ * (arXiv 2404.06425, Eq. 2) ADAPTED to a faithful instruction editor: returns a
+ * PNG of the base image where ONLY the masked (>=128) region is re-colorized to
+ * `tint` modulated by each pixel's Rec. 601 luma (shading kept), every other
+ * pixel untouched. ZeST decolors the object to plain grayscale, but that relies
+ * on an inpainting model that REGENERATES the region; Klein instead stays
+ * faithful to input pixels and anchored the output to the neutral gray (live
+ * 2026-07-15: beige-wood swatch on a gray kitchen → gray kitchen with wood
+ * grain). So the init anchors the object to the swatch's base color directly:
+ * the original hue is still wiped (ZeST's goal), and the editor only has to add
+ * the material's pattern/relief. Luma scales around mid-gray (127.5 → exactly
+ * `tint`), so highlights can exceed the tint; channels clamp at 255. Browser-only
+ * (canvas); live-verify. Leaf layer (src/lib/).
+ */
+export async function tintMaskedRegion(
+  imageUrl: string,
+  buffer: MaskBuffer,
+  tint: Rgb,
+): Promise<Blob> {
+  const bmp = await loadBitmap(imageUrl);
+  const { width: W, height: H, data: mask } = buffer;
+
+  const [out, octx] = newCanvas(W, H);
+  octx.drawImage(bmp, 0, 0, W, H);
+  const img = octx.getImageData(0, 0, W, H);
+
+  for (let i = 0; i < mask.length; i++) {
+    if (mask[i] < 128) continue; // outside the selection → keep the color
+    const o = i * 4;
+    const luma =
+      0.299 * img.data[o] + 0.587 * img.data[o + 1] + 0.114 * img.data[o + 2];
+    const factor = luma / 127.5; // mid-gray shading reproduces the tint exactly
+    img.data[o] = Math.min(255, Math.round(tint.r * factor));
+    img.data[o + 1] = Math.min(255, Math.round(tint.g * factor));
+    img.data[o + 2] = Math.min(255, Math.round(tint.b * factor));
+  }
+  octx.putImageData(img, 0, 0);
+  return toPngBlob(out);
+}
+
 /**
  * Overlays a full-scene edit onto the base image ONLY where the mask is on
  * (>=128), pixel-for-pixel at the SAME coordinates — every other pixel stays the

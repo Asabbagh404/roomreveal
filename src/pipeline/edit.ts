@@ -1,6 +1,12 @@
 import { isStepError, makeStepError } from "@/state/step-error";
 import { decodeMaskToBuffer } from "@/lib/mask-decode";
-import { compositeMaskedOverlay, erodeMask, imageSize } from "@/lib/retexture-region";
+import {
+  compositeMaskedOverlay,
+  erodeMask,
+  imageSize,
+  meanImageColor,
+  tintMaskedRegion,
+} from "@/lib/retexture-region";
 import { ARTIFACT_EXPIRES_IN_SECONDS, MODELS, TIMEOUTS_MS } from "./config";
 import { fal, uploadArtifact } from "./client";
 import type { AdapterOptions, EditResult } from "./types";
@@ -218,12 +224,23 @@ const MASK_ERODE_PX = 3;
  * This bridges "exact texture" (needs a reference image → Kontext) and "only my
  * selection" (needs a mask → no fal model does both) with a full-scene edit +
  * masked composite, client-side from `imageUrl` + `maskUrl`:
- *   1. runKontext([workingImage, texture?], prompt) re-renders the WHOLE scene —
+ *   1. texture path only — TINT the selected object to the swatch's mean color
+ *      first (ZeST-inspired init, arXiv 2404.06425 Eq. 2, adapted): kills the
+ *      object's base-color prior while keeping its shading as lighting cues, AND
+ *      anchors the hue to the swatch. Plain ZeST grayscale failed live
+ *      (2026-07-15): Klein is a faithful editor, not a regenerating inpainter —
+ *      it kept the neutral gray as the final color (beige wood on a gray kitchen
+ *      → gray wood). Skipped for instruction-only edits, where the instruction
+ *      may refer to the original color ("make it darker").
+ *   2. runKontext([workingImage, texture?], prompt) re-renders the WHOLE scene —
  *      cropping to the object first made Kontext PASTE the swatch flat (live
  *      2026-07-14); the full scene keeps the object's 3D form/lighting so it maps
  *      the swatch as a real material;
- *   2. COMPOSITE that edit over the working image, gated by the mask, so only the
- *      selected pixels change (strict locality) — output at the working dims.
+ *   3. COMPOSITE that edit over the ORIGINAL working image (not the tinted one),
+ *      gated by the mask, so only the selected pixels change (strict locality) —
+ *      output at the working dims. The tint uses the RAW mask (full coverage of
+ *      the color prior); the composite uses the ERODED mask, so any tinted pixel
+ *      outside the eroded edge is discarded with the rest of the edit.
  * `image_urls[1]` (texture) is present only when a texture is chosen; an
  * instruction-only recolor sends just the working image. The mask discards any
  * area Kontext changed outside the selection. Every failure ⇒ retryable edit
@@ -245,11 +262,24 @@ export async function editModify(
     // material halo where a loose/anti-aliased selection overshot the object.
     const tight = erodeMask(buffer, MASK_ERODE_PX);
 
+    // ZeST-inspired init (texture path only): send Klein the scene with the
+    // selected object PRE-TINTED to the swatch's mean color (luma-modulated, so
+    // shading survives) — wipes the original color prior AND anchors the hue to
+    // the material. Raw (un-eroded) mask on purpose — full coverage of the color
+    // prior; the final composite is gated by the eroded mask, so edge tint can
+    // never leak out.
+    const sceneUrl = textureUrl
+      ? await uploadArtifact(
+          await tintMaskedRegion(imageUrl, buffer, await meanImageColor(textureUrl)),
+        )
+      : imageUrl;
+    if (signal.aborted) throw makeStepError("edit", true);
+
     // Full-scene edit (NOT a crop): Kontext keeps the object's 3D form, panels and
     // lighting and applies the swatch as a real material. Cropping to the object
     // invited a flat paste of the swatch (live 2026-07-14). Texture (if any) is the
     // second image the prompt refers to.
-    const imageUrls = textureUrl ? [imageUrl, textureUrl] : [imageUrl];
+    const imageUrls = textureUrl ? [sceneUrl, textureUrl] : [sceneUrl];
     const retexturedUrl = await runKontext(imageUrls, prompt, { signal, onPhase });
     if (signal.aborted) throw makeStepError("edit", true);
 
