@@ -10,6 +10,8 @@ vi.mock("./client", () => ({
 import { video } from "./video";
 
 const opts = { signal: new AbortController().signal, onPhase: vi.fn() };
+// The motion prompt is an INPUT built by the effect layer (Story 4.6, AD-12).
+const MOTION = "the furniture flies into the empty room: the cabinet slides in from the left";
 
 afterEach(() => {
   subscribe.mockReset();
@@ -18,13 +20,13 @@ afterEach(() => {
 describe("video adapter (AD-5, FLF)", () => {
   it("returns the generated MP4 URL as the reveal", async () => {
     subscribe.mockResolvedValue({ data: { video: { url: "https://fal/reveal.mp4" } } });
-    const result = await video("https://fal/empty.png", "https://fal/photo.jpg", opts);
+    const result = await video("https://fal/empty.png", "https://fal/photo.jpg", MOTION, opts);
     expect(result.reveal).toBe("https://fal/reveal.mp4");
   });
 
   it("sends the empty room as the FIRST frame and the photo as the LAST frame (AD-1)", async () => {
     subscribe.mockResolvedValue({ data: { video: { url: "u" } } });
-    await video("https://fal/empty.png", "https://fal/photo.jpg", opts);
+    await video("https://fal/empty.png", "https://fal/photo.jpg", MOTION, opts);
     const [, cfg] = subscribe.mock.calls[0] as [string, { input: Record<string, unknown> }];
     expect(cfg.input.first_frame_url).toBe("https://fal/empty.png"); // Pièce vide = 1re frame
     expect(cfg.input.last_frame_url).toBe("https://fal/photo.jpg"); // Photo originale = dernière frame
@@ -32,9 +34,16 @@ describe("video adapter (AD-5, FLF)", () => {
     expect(typeof cfg.input.negative_prompt).toBe("string"); // anti-morph (calibrated)
   });
 
+  it("sends the passed motion prompt as input.prompt (Story 4.6 — no internal default)", async () => {
+    subscribe.mockResolvedValue({ data: { video: { url: "u" } } });
+    await video("https://fal/empty.png", "https://fal/photo.jpg", MOTION, opts);
+    const [, cfg] = subscribe.mock.calls[0] as [string, { input: Record<string, unknown> }];
+    expect(cfg.input.prompt).toBe(MOTION);
+  });
+
   it("requests 720p without audio (cost floor: $0.03/s)", async () => {
     subscribe.mockResolvedValue({ data: { video: { url: "u" } } });
-    await video("https://fal/empty.png", "https://fal/photo.jpg", opts);
+    await video("https://fal/empty.png", "https://fal/photo.jpg", MOTION, opts);
     const [, cfg] = subscribe.mock.calls[0] as [string, { input: Record<string, unknown> }];
     expect(cfg.input.resolution).toBe("720p");
     expect(cfg.input.generate_audio).toBe(false);
@@ -42,7 +51,7 @@ describe("video adapter (AD-5, FLF)", () => {
 
   it("does not force an aspect_ratio (veo 'auto' keeps the frames' ratio, AR-PIXELS)", async () => {
     subscribe.mockResolvedValue({ data: { video: { url: "u" } } });
-    await video("https://fal/empty.png", "https://fal/photo.jpg", opts);
+    await video("https://fal/empty.png", "https://fal/photo.jpg", MOTION, opts);
     const [, cfg] = subscribe.mock.calls[0] as [string, { input: Record<string, unknown> }];
     expect(cfg.input.aspect_ratio).toBeUndefined();
   });
@@ -57,7 +66,7 @@ describe("video adapter (AD-5, FLF)", () => {
         return Promise.resolve({ data: { video: { url: "u" } } });
       },
     );
-    await video("https://fal/empty.png", "https://fal/photo.jpg", { ...opts, onPhase });
+    await video("https://fal/empty.png", "https://fal/photo.jpg", MOTION, { ...opts, onPhase });
     expect(onPhase).toHaveBeenCalledWith("queued");
     expect(onPhase).toHaveBeenCalledWith("generating");
     expect(onPhase).toHaveBeenCalledWith("finalizing");
@@ -65,7 +74,7 @@ describe("video adapter (AD-5, FLF)", () => {
 
   it("throws a retryable video StepError when no video is returned", async () => {
     subscribe.mockResolvedValue({ data: {} });
-    const rejection = await video("https://fal/empty.png", "https://fal/photo.jpg", opts).catch(
+    const rejection = await video("https://fal/empty.png", "https://fal/photo.jpg", MOTION, opts).catch(
       (e) => e,
     );
     expect(rejection).toMatchObject({ step: "video", retryable: true });
@@ -73,7 +82,7 @@ describe("video adapter (AD-5, FLF)", () => {
 
   it("treats an empty-string video URL as a failure", async () => {
     subscribe.mockResolvedValue({ data: { video: { url: "" } } });
-    const rejection = await video("https://fal/empty.png", "https://fal/photo.jpg", opts).catch(
+    const rejection = await video("https://fal/empty.png", "https://fal/photo.jpg", MOTION, opts).catch(
       (e) => e,
     );
     expect(rejection).toMatchObject({ step: "video", retryable: true });
@@ -81,7 +90,7 @@ describe("video adapter (AD-5, FLF)", () => {
 
   it("converts a rejection into a retryable video StepError, never leaking the raw fal error", async () => {
     subscribe.mockRejectedValue(new Error("fal 500 boom"));
-    const rejection = await video("https://fal/empty.png", "https://fal/photo.jpg", opts).catch(
+    const rejection = await video("https://fal/empty.png", "https://fal/photo.jpg", MOTION, opts).catch(
       (e) => e,
     );
     expect(rejection).toMatchObject({ step: "video", retryable: true });

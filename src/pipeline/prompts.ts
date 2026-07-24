@@ -3,6 +3,8 @@
  * touching this file only.
  */
 
+import type { DetectedInstance } from "./types";
+
 /**
  * The single text concept fed to SAM 3 for furniture segmentation.
  *
@@ -79,7 +81,7 @@ export const FURNITURE_CATEGORIES: readonly string[] = [
   // Seating & tables
   "stool",
   "dining table",
-  "chair",
+  "chair"
 ];
 
 /**
@@ -102,6 +104,14 @@ export const EMPTY_ROOM_AUTO_PROMPT =
   "Remove ALL furniture, cabinets, kitchen island, appliances, wall-mounted TV, shelves, rugs, plants and every object. Show the completely EMPTY room: bare smooth painted walls and bare floor only. Keep the exact same room shape, walls, floor, windows, lighting, camera angle and perspective.";
 
 /**
+ * Anti-morphing tail shared VERBATIM by the generic motion prompt below and
+ * the detection-driven builder (Story 4.6) — the calibrated clause that pushes
+ * the FLF interpolation away from morph/fade/pop-in (FR-10, AD-1).
+ */
+const REVEAL_ANTI_MORPHING_TAIL =
+  "; fast confident motion with real trajectories: solid fully-opaque objects rush in early and decelerate smoothly into their final positions, every piece completely landed and still well before the last frame; no morphing, no fade-in, no slow floating, no materializing on the spot";
+
+/**
  * FLF motion prompt (kling o1, Story 4.1) — the "mix côtés + plafond" preset.
  * The video interpolates the empty room (first frame) → furnished photo (last
  * frame), so the prompt steers HOW the furniture arrives: directional motion
@@ -111,17 +121,25 @@ export const EMPTY_ROOM_AUTO_PROMPT =
  * kitchen; variant "A" (ceiling + sides descent) read best — the others are
  * kept below as documented alternatives. Paired with REVEAL_NEGATIVE_PROMPT to
  * push against the "feverish dream" morph the bare FLF interpolation produces.
+ *
+ * Recalibrated 2026-07-24 for veo 3.1 lite (user feedback on the live swap):
+ * pieces drifted slowly and stragglers FADED in at the end. Now asks for an
+ * early, snappy arrival with a smooth deceleration (ease-out) and everything
+ * landed before the last frame, so the interpolation has no gap left to
+ * cross-fade over. [À calibrer live]
  */
 export const REVEAL_MOTION_PROMPT =
-  "the furniture pieces descend from the ceiling and slide in from the side walls, flying into the room and landing precisely into their final positions; clear directional motion with real trajectories, solid objects physically moving into place, cinematic reveal; no morphing, no materializing on the spot";
+  "the furniture pieces descend from the ceiling and slide in from the side walls, rushing into the room and settling precisely into their final positions early" +
+  REVEAL_ANTI_MORPHING_TAIL;
 
 /**
  * Negative prompt for the FLF video — discourages the in-place morph/dissolve
- * that pure empty→furnished interpolation tends toward (kling default is only
- * "blur, distort, and low quality").
+ * that pure empty→furnished interpolation tends toward. Hardened 2026-07-24
+ * (veo swap): the end-of-clip fade-in of straggler objects is the #1 rejected
+ * artifact, and slow hovering/drifting reads as "floating furniture".
  */
 export const REVEAL_NEGATIVE_PROMPT =
-  "morphing, dissolving, materializing, fading in, cross-dissolve, blur, distort, low quality, warping";
+  "morphing, dissolving, materializing, fading in, fade-in at the end, objects gradually appearing in place, ghosting, semi-transparent objects, cross-dissolve, slow floating, drifting, hovering, blur, distort, low quality, warping";
 
 /**
  * Benched motion-prompt alternatives (kept so the calibration work isn't lost).
@@ -136,6 +154,73 @@ export const REVEAL_NEGATIVE_PROMPT =
  *   never fading or morphing in place"
  */
 
+/** Entry trajectory derived from a normalized [x0,y0,x1,y1] box (Story 4.6):
+ * a box that never reaches the lower third of the frame (y1 < 0.66) reads as a
+ * wall/ceiling-mounted object (hood, upper cabinets, pendant) → it drops from
+ * above; otherwise the horizontal center picks a side, defaulting to the back
+ * of the room for the middle band. */
+function entryDirection(box: DetectedInstance["box"]): string {
+  const [x0, , x1, y1] = box;
+  if (y1 < 0.66) return "drops down from above";
+  const cx = (x0 + x1) / 2;
+  if (cx < 0.33) return "slides in from the left";
+  if (cx > 0.67) return "slides in from the right";
+  return "slides in from the back of the room";
+}
+
+/**
+ * Detection-driven FLF motion prompt (Story 4.6, AD-6): names the biggest
+ * detected objects with a concrete entry trajectory each, so the video model
+ * animates named furniture INTO the room instead of morphing pixels in place.
+ * Pure and deterministic — no state, no clock, no randomness.
+ *
+ * Heuristic: sort by area desc, name the top 5; identical labels merge into one
+ * naive-plural clause (direction of the largest occurrence); any remainder is
+ * summed up in a single "smaller pieces" sentence. Labels are the Grounding
+ * DINO texts as-is (English, lowercase — never re-mapped). The calibrated
+ * anti-morphing tail is kept verbatim. Without instances (fal backend, 204, an
+ * older Generation, empty array) the result IS `REVEAL_MOTION_PROMPT` — the
+ * exact same string, zero regression.
+ */
+export function buildRevealMotionPrompt(instances?: readonly DetectedInstance[]): string {
+  if (instances === undefined || instances.length === 0) {
+    return REVEAL_MOTION_PROMPT;
+  }
+
+  const byAreaDesc = [...instances].sort((a, b) => b.area - a.area);
+  const named = byAreaDesc.slice(0, 5);
+  const hasOverflow = byAreaDesc.length > named.length;
+
+  // Merge identical labels: first occurrence in area-desc order is the largest,
+  // so its direction wins for the merged clause.
+  const merged = new Map<string, { direction: string; count: number }>();
+  for (const instance of named) {
+    const entry = merged.get(instance.label);
+    if (entry === undefined) {
+      merged.set(instance.label, {
+        direction: entryDirection(instance.box),
+        count: 1
+      });
+    } else {
+      merged.set(instance.label, { ...entry, count: entry.count + 1 });
+    }
+  }
+
+  const clauses = [...merged.entries()].map(([label, { direction, count }]) =>
+    count > 1
+      ? // Naive plural ("cabinet" → "cabinets", already-plural labels kept
+        // as-is) + verb agreement ("slides in" → "slide in") — GDINO labels
+        // are English nouns, good enough here.
+        `the ${label.endsWith("s") ? label : `${label}s`} ${direction.replace(/^(\w+)s /, "$1 ")}`
+      : `the ${label} ${direction}`
+  );
+  if (hasOverflow) clauses.push("the smaller pieces settle into place last");
+
+  const prompt = `the furniture moves into the empty room: ${clauses.join(", ")}` + REVEAL_ANTI_MORPHING_TAIL;
+  console.log({ prompt });
+  return prompt;
+}
+
 /**
  * Free-edit « Modifier » prompt (texture bank). Composes an instruction that
  * (a) bounds the change to the masked element, preserving its shape, lighting
@@ -145,10 +230,7 @@ export const REVEAL_NEGATIVE_PROMPT =
  * instruction), but the region-bounding sentence is always present. [À calibrer
  * live avec le scale IP-Adapter de flux-general.]
  */
-export function buildModifyPrompt(
-  texturePrompt?: string,
-  instruction?: string,
-): string {
+export function buildModifyPrompt(texturePrompt?: string, instruction?: string): string {
   const tex = texturePrompt?.trim();
   const ins = instruction?.trim();
   const parts: string[] = [];
@@ -162,13 +244,13 @@ export function buildModifyPrompt(
     // the prompt must say the flat tint is a base coat to finish with the
     // sample's full material, keeping the shading as lighting cues.
     parts.push(
-      `The second image is a MATERIAL SAMPLE (a ${tex} swatch), not a picture to insert. The target object in the first image has been deliberately pre-painted with a flat placeholder tint of that material's base color: treat its current flat color as an unfinished base coat, and use its shading only as lighting cues (shadows and highlights). Re-render the surfaces of that object as if they were physically made of the sample's material, with the sample's exact colors, pattern, grain and finish: wrap the material across the object following its real shape, panels, edges, thickness and perspective, and preserve the object's existing lighting, shadows, highlights and reflections. Do NOT paste, overlay, stretch or place the second image as a flat rectangle — use it only as the surface material.`,
+      `The second image is a MATERIAL SAMPLE (a ${tex} swatch), not a picture to insert. The target object in the first image has been deliberately pre-painted with a flat placeholder tint of that material's base color: treat its current flat color as an unfinished base coat, and use its shading only as lighting cues (shadows and highlights). Re-render the surfaces of that object as if they were physically made of the sample's material, with the sample's exact colors, pattern, grain and finish: wrap the material across the object following its real shape, panels, edges, thickness and perspective, and preserve the object's existing lighting, shadows, highlights and reflections. Do NOT paste, overlay, stretch or place the second image as a flat rectangle — use it only as the surface material.`
     );
   }
   if (ins) parts.push(ins);
   // Kontext is maskless — this preservation clause is what confines the change.
   parts.push(
-    "Keep everything else in the scene exactly the same: the framing, camera angle, layout, the other objects, and the lighting must not change.",
+    "Keep everything else in the scene exactly the same: the framing, camera angle, layout, the other objects, and the lighting must not change."
   );
   return parts.join(" ");
 }

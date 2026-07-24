@@ -1,4 +1,5 @@
 import {
+  type DetectedInstance,
   type EditBase,
   type Generation,
   type MaskBuffer,
@@ -29,7 +30,11 @@ export type GenerationAction =
   | { type: "PHOTO_NORMALIZED"; photo: OriginalPhoto }
   | { type: "PHOTO_UPLOADED"; falUrl: string }
   | { type: "DETECTION_UPLOADED"; falUrl: string }
-  | { type: "DETECT_SUCCEEDED"; detectedMaskUrl: string | null }
+  | {
+      type: "DETECT_SUCCEEDED";
+      detectedMaskUrl: string | null;
+      instances?: readonly DetectedInstance[];
+    }
   | { type: "SET_MASK_BUFFER"; buffer: MaskBuffer }
   | { type: "UNION_MASK_BUFFER"; buffer: MaskBuffer }
   | { type: "MASK_VALIDATED"; maskUrl: string }
@@ -101,6 +106,9 @@ export function generationReducer(
         ...invalidateDownstream("upload"),
         originalPhoto: action.photo,
         maskDraft: undefined,
+        // The previous photo's detections must never drive the new photo's
+        // motion prompt (Story 4.6) — drop them with the other stale artifacts.
+        detectedInstances: undefined,
         // Clear any prior edit-mode work image so a re-upload (edit mode:
         // back to Upload via the « Photo » step, then a new photo) doesn't leave
         // EDIT_START no-op'ing on a stale editBase (Story 5.3).
@@ -135,12 +143,15 @@ export function generationReducer(
       // A null detectedMaskUrl is the no-furniture case (FR-16), not an error.
       // Preserve any buffer already committed this attempt so a stray re-dispatch
       // (that slipped past the effect-layer epoch guard) can't wipe manual edits.
+      // Story 4.6: also store the per-object instances (undefined on fal/204),
+      // OVERWRITING any previous value — every re-detection replaces them.
       return {
         ...state,
         maskDraft: {
           detectedMaskUrl: action.detectedMaskUrl,
           buffer: state.maskDraft?.buffer,
         },
+        detectedInstances: action.instances,
         waitPhase: undefined,
         error: undefined,
       };

@@ -100,6 +100,15 @@ export type { MaskBuffer } from "@/lib/mask-buffer";
 import type { MaskBuffer } from "@/lib/mask-buffer";
 
 /**
+ * One detected object from the detect step (Story 4.6). Defined in the pipeline
+ * (where the adapter produces it, AD-5) and re-exported here so the domain has
+ * a single name for it — the state layer may depend on pipeline types (AD-12
+ * dependency direction), never the reverse.
+ */
+export type { DetectedInstance } from "@/pipeline/types";
+import type { DetectedInstance } from "@/pipeline/types";
+
+/**
  * The mask draft (AD-13), owned by the reducer so it survives component
  * unmount/remount. Story 2.1 seeds `detectedMaskUrl` from detection; Story 2.2
  * adds the editable binary `buffer` (canonical dims, dual-life AD-13).
@@ -129,6 +138,11 @@ export interface EditBase {
 /**
  * The single Generation object held by the reducer (AD-3). The server holds no
  * state; loss on refresh is accepted. fal artifacts are referenced by URL.
+ * Extension (Story 4.6, AD-3): `detectedInstances` carries the per-object
+ * detections of the reveal detect step (labels + [0,1] boxes) from detection to
+ * the video effect, which derives the motion prompt from them. Internal like
+ * `categories` — never exposed in the UI; replaced by every re-detection and
+ * destroyed with the Generation.
  */
 export interface Generation {
   /** Top-level mode chosen on the home screen (Story 5.1). `undefined` → home. */
@@ -139,6 +153,8 @@ export interface Generation {
   /** Free-edit working image (Story 5.3, edit mode only). */
   editBase?: EditBase;
   maskDraft?: MaskDraft;
+  /** Per-object detections (Story 4.6, local backend; `undefined` on fal/204). */
+  detectedInstances?: readonly DetectedInstance[];
   mask?: string;
   emptyRoom?: string;
   reveal?: string;

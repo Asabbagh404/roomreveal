@@ -77,9 +77,37 @@ to the hosted backend.
 - `image`: the detection-resolution JPEG (the app sends the ≤1536 px copy)
 - `prompts`: JSON array of concepts (the app sends `FURNITURE_CATEGORIES`)
 
-Returns `200` with an `image/png` binary mask (white = furniture), or `204 No
-Content` when nothing is detected (the app treats 204 as the FR-16 "no furniture"
-case).
+Returns `200` with a JSON body, or `204 No Content` when nothing is detected
+(the app treats 204 as the FR-16 "no furniture" case):
+
+```json
+{
+  "mask": "<base64-encoded binary PNG, white = furniture>",
+  "instances": [
+    { "label": "cabinet", "box": [0.1, 0.2, 0.45, 0.9], "area": 0.245 }
+  ]
+}
+```
+
+- `mask`: the unioned binary mask of every detected object, base64 PNG (the app
+  turns it into a `data:image/png;base64,…` URL).
+- `instances`: one entry per Grounding DINO detection, in detection order.
+  `label` is the matched concept text as-is (English, lowercase, sometimes a
+  merged phrase like `"kitchen island cabinet"`); `box` is `[x0, y0, x1, y1]`
+  **normalized to [0,1]** relative to the posted image (never pixels); `area`
+  is the normalized box area (`(x1-x0)·(y1-y0)`). The app uses instances to
+  build the per-object motion prompt of the Révélation (Story 4.6).
+
+Quick check (venv + GPU required):
+
+```bash
+curl -F image=@photo.jpg -F 'prompts=["cabinet","refrigerator"]' \
+  localhost:8000/detect
+# → {"mask":"iVBOR...","instances":[{"label":"cabinet",...}]}
+```
+
+`POST /point` and `POST /box` are unchanged: they still return a raw
+`image/png` binary mask (the edit-mode selection tools depend on that).
 
 ## Tuning
 

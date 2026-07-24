@@ -7,6 +7,9 @@ concepts in a single prompt ("cabinet. countertop. oven. ..."), so the whole
 FURNITURE_CATEGORIES list is detected in one pass — free, no per-concept cost.
 All masks are unioned into one binary PNG (white = furniture) at the input
 resolution; the Next app reduces it to canonical dimensions (AD-2 amendment).
+/detect returns the PNG base64-encoded in a JSON envelope together with the
+per-object instances (label + normalized box) that drive the motion prompt
+(Story 4.6); /point and /box still return the raw PNG.
 
 Run:  uvicorn server:app --host 0.0.0.0 --port 8000
 The app calls this when NEXT_PUBLIC_DETECT_BACKEND=local (see ../README notes).
@@ -14,6 +17,7 @@ The app calls this when NEXT_PUBLIC_DETECT_BACKEND=local (see ../README notes).
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 
@@ -21,7 +25,7 @@ import numpy as np
 import torch
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from PIL import Image
 from transformers import (
     AutoModelForZeroShotObjectDetection,
@@ -81,8 +85,14 @@ def health() -> dict:
     return {"status": "ok", "device": DEVICE, "models_loaded": bool(_models)}
 
 
-def _detect_boxes(m: dict, image: Image.Image, prompts: list[str]) -> torch.Tensor:
-    """Grounding DINO over all concepts at once -> xyxy boxes (may be empty)."""
+def _detect_boxes(
+    m: dict, image: Image.Image, prompts: list[str]
+) -> tuple[torch.Tensor, list[str]]:
+    """Grounding DINO over all concepts at once -> (xyxy boxes, text labels).
+
+    Boxes may be empty (labels then too). Labels are the matched concept texts,
+    passed through as-is (English, lowercase, sometimes merged phrases).
+    """
     # GDINO convention: lowercase concepts, each ended by " . ".
     text = " . ".join(p.strip().lower() for p in prompts if p.strip()) + " ."
     inputs = m["gdino_processor"](images=image, text=text, return_tensors="pt").to(DEVICE)
@@ -95,7 +105,19 @@ def _detect_boxes(m: dict, image: Image.Image, prompts: list[str]) -> torch.Tens
         text_threshold=TEXT_THRESHOLD,
         target_sizes=[image.size[::-1]],  # (h, w)
     )
-    return results[0]["boxes"]  # tensor [n, 4] xyxy
+    result = results[0]
+    # transformers 5.x returns the text labels under "text_labels" (same rename
+    # wave as threshold above); older builds used "labels" for the same strings.
+    labels = result.get("text_labels", result.get("labels"))
+    if labels is None or not all(isinstance(label, str) for label in labels):
+        # Fail loudly rather than invent a mapping — on some transformers builds
+        # "labels" holds class ids/tensors, not strings, which would leak
+        # garbage like "tensor(0)" into the motion prompt. The adapter turns
+        # the 500 into the usual retryable detect StepError.
+        raise RuntimeError(
+            "Grounding DINO post-processing returned no usable text labels"
+        )
+    return result["boxes"], list(labels)  # tensor [n, 4] xyxy
 
 
 def _segment_union(m: dict, image: Image.Image, boxes: torch.Tensor) -> np.ndarray:
@@ -207,7 +229,7 @@ async def detect(image: UploadFile = File(...), prompts: str = Form(...)) -> Res
     concepts = json.loads(prompts)
     pil = Image.open(io.BytesIO(await image.read())).convert("RGB")
 
-    boxes = _detect_boxes(m, pil, concepts)
+    boxes, labels = _detect_boxes(m, pil, concepts)
     if boxes.numel() == 0:
         return Response(status_code=204)  # no furniture (FR-16)
 
@@ -218,4 +240,27 @@ async def detect(image: UploadFile = File(...), prompts: str = Form(...)) -> Res
     mask_img = Image.fromarray((union * 255).astype(np.uint8), mode="L")
     buf = io.BytesIO()
     mask_img.save(buf, format="PNG")
-    return Response(content=buf.getvalue(), media_type="image/png")
+    # Per-object instances (Story 4.6): label + box normalized to [0,1] relative
+    # to THIS image (AD-2: never pixel coordinates), plus the normalized box
+    # area so the app can rank objects by size. The unioned mask is unchanged
+    # (AD-7) — instances are an informative side channel for the motion prompt.
+    w, h = pil.size
+
+    def _norm(value: float, size: int) -> float:
+        # GDINO boxes can spill past the frame — clamp to honor the [0,1] contract.
+        return min(max(value / size, 0.0), 1.0)
+
+    instances = [
+        {
+            "label": label,
+            "box": [_norm(x0, w), _norm(y0, h), _norm(x1, w), _norm(y1, h)],
+            "area": (_norm(x1, w) - _norm(x0, w)) * (_norm(y1, h) - _norm(y0, h)),
+        }
+        for (x0, y0, x1, y1), label in zip(boxes.tolist(), labels, strict=True)
+    ]
+    return JSONResponse(
+        {
+            "mask": base64.b64encode(buf.getvalue()).decode("ascii"),
+            "instances": instances,
+        }
+    )

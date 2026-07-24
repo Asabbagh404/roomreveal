@@ -7,14 +7,31 @@ export interface AdapterOptions {
 }
 
 /**
+ * One detected object (Story 4.6, local backend only). `label` is the matched
+ * concept text as returned by Grounding DINO (English, lowercase, passed
+ * through as-is); `box` is `[x0, y0, x1, y1]` normalized to [0,1] relative to
+ * the detection image (AD-2: never pixel coordinates); `area` is the
+ * normalized box area, used to rank objects by size.
+ */
+export interface DetectedInstance {
+  label: string;
+  box: [number, number, number, number];
+  area: number;
+}
+
+/**
  * Result of the detect adapter (AD-5). `initialMask` is the URL of a single
  * binary PNG mask at canonical dimensions (segments already composed inside the
  * adapter), or `null` when no furniture was found — the canonical FR-16 case.
  * `categories` stays internal to the pipeline; it is never exposed in the UI.
+ * `instances` (Story 4.6) is the per-object detection list feeding the motion
+ * prompt — produced by the local backend only (fal leaves it `undefined`) and,
+ * like `categories`, never exposed in the UI.
  */
 export interface DetectResult {
   initialMask: string | null;
   categories: string[];
+  instances?: DetectedInstance[];
 }
 
 /**

@@ -17,8 +17,14 @@ const boxSegment = vi.fn();
 const boxSegmentLocal = vi.fn();
 const videoFn = vi.fn();
 const uploadArtifact = vi.fn();
-vi.mock("@/pipeline", () => ({
+vi.mock("@/pipeline", async () => ({
   DETECT_BACKEND: "fal", // these tests cover the default (fal) orchestration path
+  // The REAL prompt builder (pure, no adapter behind it): runVideo's fallback
+  // contract — "without instances the prompt IS REVEAL_MOTION_PROMPT" — must be
+  // asserted against the true function, not a stub (Story 4.6).
+  buildRevealMotionPrompt: (
+    await vi.importActual<typeof import("@/pipeline/prompts")>("@/pipeline/prompts")
+  ).buildRevealMotionPrompt,
   detect: (...a: unknown[]) => detect(...a),
   detectLocal: (...a: unknown[]) => detectLocal(...a),
   inpaint: (...a: unknown[]) => inpaint(...a),
@@ -51,6 +57,7 @@ vi.mock("@/lib/mask-decode", () => ({
   decodeMaskToBuffer: (...a: unknown[]) => decodeMaskToBuffer(...a),
 }));
 
+import { REVEAL_MOTION_PROMPT } from "@/pipeline/prompts";
 import { runAutoEmptyRoom, runDetect, runDetectSelect, runEdit, runInpaint, runPointSegment, runValidateMask, runVideo } from "./effects";
 import type { Generation } from "./types";
 
@@ -134,6 +141,39 @@ describe("runDetect (AD-12 orchestration)", () => {
     expect(dispatch).toHaveBeenCalledWith({
       type: "DETECT_SUCCEEDED",
       detectedMaskUrl: "https://fal/mask.png",
+    });
+  });
+
+  // The forwarding is backend-agnostic: runDetect dispatches whatever
+  // `result.instances` the adapter returned. The mock pins DETECT_BACKEND to
+  // "fal", so the fal-shaped adapter stands in for detectLocal here — in
+  // production only the local backend actually produces instances (types.ts).
+  it("forwards the adapter's instances to DETECT_SUCCEEDED (Story 4.6, backend-agnostic)", async () => {
+    const instances = [
+      { label: "cabinet", box: [0.1, 0.2, 0.4, 0.9], area: 0.21 },
+    ];
+    detect.mockResolvedValue({
+      initialMask: "https://fal/mask.png",
+      categories: [],
+      instances,
+    });
+    const dispatch = vi.fn();
+    const state = baseState({
+      originalPhoto: {
+        blob: new Blob(["p"]),
+        detectionBlob: new Blob(["d"]),
+        detectionFalUrl: "https://fal/detect.jpg",
+        width: 1024,
+        height: 768,
+      },
+    });
+
+    await runDetect(state, dispatch, { signal, isStale: notStale });
+
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "DETECT_SUCCEEDED",
+      detectedMaskUrl: "https://fal/mask.png",
+      instances,
     });
   });
 
@@ -581,6 +621,7 @@ describe("runVideo (AD-12 FLF orchestration)", () => {
     expect(videoFn).toHaveBeenCalledWith(
       "https://fal/empty.png", // first frame = empty room
       "https://fal/photo.jpg", // last frame = canonical photo
+      expect.any(String), // motion prompt built by the effect layer (Story 4.6)
       expect.anything(),
     );
     expect(dispatch).toHaveBeenCalledWith({
@@ -606,7 +647,7 @@ describe("runVideo (AD-12 FLF orchestration)", () => {
 
     expect(uploadArtifact).toHaveBeenCalledOnce();
     expect(dispatch).toHaveBeenCalledWith({ type: "PHOTO_UPLOADED", falUrl: "https://fal/photo.jpg" });
-    expect(videoFn).toHaveBeenCalledWith("https://fal/empty.png", "https://fal/photo.jpg", expect.anything());
+    expect(videoFn).toHaveBeenCalledWith("https://fal/empty.png", "https://fal/photo.jpg", expect.any(String), expect.anything());
   });
 
   it("is a no-op when the empty room or the photo is missing", async () => {
@@ -631,6 +672,44 @@ describe("runVideo (AD-12 FLF orchestration)", () => {
     await runVideo(videoState(), dispatch, { signal, isStale: () => stale });
 
     expect(dispatch.mock.calls.some((c) => c[0].type === "VIDEO_SUCCEEDED")).toBe(false);
+  });
+
+  it("builds the motion prompt from the detected instances (labels + trajectories, Story 4.6)", async () => {
+    videoFn.mockResolvedValue({ reveal: "https://fal/reveal.mp4" });
+    const dispatch = vi.fn();
+    const state = videoState({
+      detectedInstances: [
+        { label: "cabinet", box: [0.0, 0.3, 0.3, 0.9], area: 0.6 },
+        { label: "refrigerator", box: [0.8, 0.2, 1.0, 0.9], area: 0.5 },
+      ],
+    });
+
+    await runVideo(state, dispatch, { signal, isStale: notStale });
+
+    const [, , motionPrompt] = videoFn.mock.calls[0] as [string, string, string];
+    expect(motionPrompt).toContain("the cabinet slides in from the left");
+    expect(motionPrompt).toContain("the refrigerator slides in from the right");
+    expect(motionPrompt).toContain("no morphing"); // anti-morph clause kept
+  });
+
+  it("falls back to exactly REVEAL_MOTION_PROMPT without instances (zero regression, Story 4.6)", async () => {
+    videoFn.mockResolvedValue({ reveal: "https://fal/reveal.mp4" });
+    const dispatch = vi.fn();
+
+    await runVideo(videoState(), dispatch, { signal, isStale: notStale });
+
+    const [, , motionPrompt] = videoFn.mock.calls[0] as [string, string, string];
+    expect(motionPrompt).toBe(REVEAL_MOTION_PROMPT); // strict identity, not toContain
+  });
+
+  it("also falls back strictly for an EMPTY instances array", async () => {
+    videoFn.mockResolvedValue({ reveal: "https://fal/reveal.mp4" });
+    const dispatch = vi.fn();
+
+    await runVideo(videoState({ detectedInstances: [] }), dispatch, { signal, isStale: notStale });
+
+    const [, , motionPrompt] = videoFn.mock.calls[0] as [string, string, string];
+    expect(motionPrompt).toBe(REVEAL_MOTION_PROMPT);
   });
 
   it("dispatches SET_ERROR with the adapter's video StepError on failure", async () => {

@@ -50,6 +50,18 @@ describe("generationReducer (pure, no mocks)", () => {
     expect(next.reveal).toBeUndefined();
   });
 
+  it("PHOTO_NORMALIZED drops the previous photo's detected instances (Story 4.6)", () => {
+    const state: Generation = {
+      ...fullGeneration(),
+      detectedInstances: [
+        { label: "cabinet", box: [0.1, 0.2, 0.4, 0.9], area: 0.21 },
+      ],
+    };
+    const photo = { blob: new Blob(["new"]), detectionBlob: new Blob(["d"]), width: 1024, height: 768 };
+    const next = generationReducer(state, { type: "PHOTO_NORMALIZED", photo });
+    expect(next.detectedInstances).toBeUndefined();
+  });
+
   it("GO_TO_STEP clears a stale waitPhase so the next attempt is not blocked (AD-14)", () => {
     const state: Generation = {
       step: "video",
@@ -115,6 +127,72 @@ describe("generationReducer (pure, no mocks)", () => {
       detectedMaskUrl: null,
     });
     expect(next.maskDraft).toEqual({ detectedMaskUrl: null });
+  });
+
+  it("DETECT_SUCCEEDED stores the detected instances (Story 4.6, AD-3 extension)", () => {
+    const instances = [
+      { label: "cabinet", box: [0.1, 0.2, 0.4, 0.9] as [number, number, number, number], area: 0.21 },
+    ];
+    const state: Generation = {
+      step: "mask",
+      epoch: 1,
+      originalPhoto: { blob: new Blob(["p"]), detectionBlob: new Blob(["d"]), width: 1024, height: 768 },
+    };
+    const next = generationReducer(state, {
+      type: "DETECT_SUCCEEDED",
+      detectedMaskUrl: "fal://mask",
+      instances,
+    });
+    expect(next.detectedInstances).toBe(instances);
+    expect(next).not.toBe(state); // immutable: fresh object
+  });
+
+  it("DETECT_SUCCEEDED without instances leaves the field undefined (fal backend / 204)", () => {
+    const state: Generation = { step: "mask", epoch: 1 };
+    const next = generationReducer(state, {
+      type: "DETECT_SUCCEEDED",
+      detectedMaskUrl: "fal://mask",
+    });
+    expect(next.detectedInstances).toBeUndefined();
+  });
+
+  it("DETECT_SUCCEEDED with instances preserves an already-committed buffer (stray re-dispatch)", () => {
+    const buffer = { data: new Uint8Array([255, 0, 0, 0]), width: 2, height: 2 };
+    const state: Generation = {
+      step: "mask",
+      epoch: 1,
+      maskDraft: { detectedMaskUrl: "fal://old", buffer },
+    };
+    const next = generationReducer(state, {
+      type: "DETECT_SUCCEEDED",
+      detectedMaskUrl: "fal://new",
+      instances: [{ label: "oven", box: [0.7, 0.4, 0.9, 0.9], area: 0.1 }],
+    });
+    expect(next.maskDraft?.buffer).toBe(buffer); // manual edits survive
+    expect(next.maskDraft?.detectedMaskUrl).toBe("fal://new");
+  });
+
+  it("re-detection REPLACES the previous instances (even by undefined, e.g. backend switch)", () => {
+    const state: Generation = {
+      step: "mask",
+      epoch: 2,
+      detectedInstances: [
+        { label: "cabinet", box: [0.1, 0.2, 0.4, 0.9], area: 0.21 },
+      ],
+    };
+    const replaced = generationReducer(state, {
+      type: "DETECT_SUCCEEDED",
+      detectedMaskUrl: "fal://mask2",
+      instances: [{ label: "stool", box: [0.4, 0.6, 0.5, 0.9], area: 0.03 }],
+    });
+    expect(replaced.detectedInstances).toEqual([
+      { label: "stool", box: [0.4, 0.6, 0.5, 0.9], area: 0.03 },
+    ]);
+    const cleared = generationReducer(state, {
+      type: "DETECT_SUCCEEDED",
+      detectedMaskUrl: "fal://mask3",
+    });
+    expect(cleared.detectedInstances).toBeUndefined(); // stale instances never linger
   });
 
   it("SET_MASK_BUFFER commits an editable buffer onto the existing draft (AD-13)", () => {

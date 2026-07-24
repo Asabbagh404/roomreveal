@@ -1,4 +1,4 @@
-import { DETECT_BACKEND, autoEmptyRoom, buildModifyPrompt, detect, detectLocal, editAdd, editModify, editRemove, findTexture, inpaint, pointSegment, pointSegmentLocal, resolveTextureUrl, uploadArtifact, video } from "@/pipeline";
+import { DETECT_BACKEND, autoEmptyRoom, buildModifyPrompt, buildRevealMotionPrompt, detect, detectLocal, editAdd, editModify, editRemove, findTexture, inpaint, pointSegment, pointSegmentLocal, resolveTextureUrl, uploadArtifact, video } from "@/pipeline";
 import type { EditResult } from "@/pipeline";
 import { encodeMaskPng } from "@/lib/mask-encode";
 import { isBufferEmpty } from "@/lib/mask-buffer";
@@ -65,7 +65,13 @@ export async function runDetect(
     }
     if (dead()) return; // superseded or cancelled — drop the result
 
-    dispatch({ type: "DETECT_SUCCEEDED", detectedMaskUrl: result.initialMask });
+    // Instances (Story 4.6) ride along for the motion prompt — undefined on the
+    // fal backend, which never produces them.
+    dispatch({
+      type: "DETECT_SUCCEEDED",
+      detectedMaskUrl: result.initialMask,
+      instances: result.instances,
+    });
   } catch (err) {
     if (dead()) return; // a cancelled/superseded run must not paint an error
     dispatch({
@@ -454,7 +460,11 @@ export async function runVideo(
     // (AD-14) accepts the real queued/generating/finalizing that follow.
     if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase: "queued" });
 
-    const result = await video(emptyRoomUrl, photoUrl, { signal, onPhase });
+    // Motion prompt (Story 4.6, AD-12): built HERE from the detected instances
+    // — the adapter stays passive. Without instances (fal backend, 204, older
+    // Generation) the builder returns REVEAL_MOTION_PROMPT itself, unchanged.
+    const motionPrompt = buildRevealMotionPrompt(state.detectedInstances);
+    const result = await video(emptyRoomUrl, photoUrl, motionPrompt, { signal, onPhase });
     if (dead()) return; // superseded or cancelled — drop the result
 
     dispatch({ type: "VIDEO_SUCCEEDED", revealUrl: result.reveal });

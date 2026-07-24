@@ -5,7 +5,7 @@ import {
   TIMEOUTS_MS,
 } from "./config";
 import { fal } from "./client";
-import { REVEAL_MOTION_PROMPT, REVEAL_NEGATIVE_PROMPT } from "./prompts";
+import { REVEAL_NEGATIVE_PROMPT } from "./prompts";
 import type { AdapterOptions, VideoResult } from "./types";
 
 /**
@@ -16,7 +16,9 @@ import type { AdapterOptions, VideoResult } from "./types";
  * is the constrained LAST frame (`last_frame_url`) — so the furniture animates
  * INTO place (empty → furnished), never a fade. `last_frame_url` is always sent
  * (never left optional). No `aspect_ratio` is passed — veo's default is "auto",
- * which keeps the input frames' ratio (AR-PIXELS — no forced 16:9). 720p muted
+ * which keeps the input frames' ratio (AR-PIXELS — no forced 16:9). The motion
+ * prompt is an INPUT built by the effect layer (Story 4.6, AD-12) — the adapter
+ * stays passive, no internal default. 720p muted
  * (generate_audio: false) is the cost floor. Queue statuses map to WaitPhase
  * via onPhase; the 6 min timeout aborts the fal job and becomes a retryable
  * StepError (AD-8). @fal-ai/client is reached only through ./client.
@@ -29,6 +31,7 @@ import type { AdapterOptions, VideoResult } from "./types";
 export async function video(
   emptyRoomUrl: string,
   photoUrl: string,
+  motionPrompt: string,
   { signal, onPhase }: AdapterOptions,
 ): Promise<VideoResult> {
   const controller = new AbortController();
@@ -50,7 +53,7 @@ export async function video(
         // FLF strict (AD-1): empty room first, untouched photo last.
         first_frame_url: emptyRoomUrl,
         last_frame_url: photoUrl,
-        prompt: REVEAL_MOTION_PROMPT,
+        prompt: motionPrompt,
         negative_prompt: REVEAL_NEGATIVE_PROMPT,
         resolution: "720p",
         generate_audio: false,
