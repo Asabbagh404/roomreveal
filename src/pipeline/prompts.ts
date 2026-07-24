@@ -101,7 +101,7 @@ export const EMPTY_ROOM_PROMPT =
  * (empties the room far cleaner than mask+eraser, 2/2 photos). [À calibrer live]
  */
 export const EMPTY_ROOM_AUTO_PROMPT =
-  "Remove ALL furniture, cabinets, kitchen island, appliances, wall-mounted TV, shelves, rugs, plants and every object. Show the completely EMPTY room: bare smooth painted walls and bare floor only. Keep the exact same room shape, walls, floor, windows, lighting, camera angle and perspective.";
+  "Remove ALL furniture, cabinets, kitchen island, appliances, wall-mounted TV, shelves, rugs, plants and every object. Also remove every shadow, contact shadow, reflection and mark these objects cast on the floor and walls — no leftover shadow where an object used to stand. Show the completely EMPTY room: bare smooth painted walls and bare clean floor only, evenly lit. Keep the room's own ambient lighting, windows and natural daylight, and the exact same room shape, walls, floor, camera angle and perspective.";
 
 /**
  * Anti-morphing tail shared VERBATIM by the generic motion prompt below and
