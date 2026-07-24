@@ -553,6 +553,34 @@ So that je puisse présenter RoomReveal en séance et justifier son économie.
 **Then** deux environnements existent — `dev` local (`next dev`) et instance démo auto-hébergée (`next start` ou Docker) **sur réseau privé** — ne différant que par la variable `FAL_KEY` (AR-DEPLOY, AR-PROXY)
 **And** aucune CI en v1 : lint, typecheck et tests Vitest sont passés localement avant push (AR-DEPLOY, AR-TESTS)
 
+### Story 4.6: Prompt de mouvement piloté par les détections
+
+_Ajoutée le 2026-07-24 (réouverture Epic 4, précédent Story 5.6). Design validé en conversation — approche A « prompt enrichi » ; l'approche B (contrôle de mouvement explicite par masques/trajectoires) est différée, voir `epics-deferred-improvements.md` §5._
+
+As a utilisateur,
+I want que les meubles de ma Révélation entrent en scène avec des trajectoires propres à chaque objet (glisser depuis un côté, descendre du plafond) plutôt que de morpher sur place,
+So that la vidéo gagne en cohérence physique et renforce l'effet « wow » (SM-1).
+
+**Acceptance Criteria:**
+
+**Given** le backend de détection local (`DETECT_BACKEND === "local"`)
+**When** `/detect` trouve des meubles
+**Then** le service renvoie, en plus du masque unioné, la liste des instances détectées — `{ label, box, area }` avec la boîte **normalisée [0,1]** par rapport à l'image de détection (AD-2 : indépendant de la copie 1536) — dans une réponse JSON `{ mask: <PNG base64>, instances: [...] }` ; le 204 « aucun meuble » (FR-16) est inchangé, les routes `/point` et `/box` sont intouchées
+**And** `detectLocal` expose ces instances via `DetectResult.instances` (champ optionnel, extension du contrat AD-5) ; le backend fal n'en produit pas (`undefined`) et, comme `categories`, les instances ne sont **jamais** exposées en UI
+
+**Given** une détection réussie en mode reveal
+**When** `DETECT_SUCCEEDED` est dispatché
+**Then** le reducer conserve les instances dans `generation.detectedInstances` (extension AD-3), remplacées par toute re-détection et détruites avec la Génération — sans aucun effet sur `maskDraft`, l'édition du Masque ni les parcours existants
+
+**Given** l'étape Vidéo avec des instances disponibles
+**When** `runVideo` lance l'adaptateur
+**Then** `buildRevealMotionPrompt(instances)` (fonction pure dans `pipeline/prompts.ts`, AD-6) construit le prompt de mouvement : les 5 plus grosses instances par aire sont nommées individuellement avec une direction d'entrée dérivée de leur boîte (bord gauche → « slides in from the left », bord droit → « from the right », tiers haut sans contact sol → « drops down from above », sinon → « from the back of the room »), les labels identiques sont fusionnés, le reste est résumé en une phrase, et la clause anti-morphing du prompt actuel est conservée verbatim
+**And** `video(...)` reçoit ce prompt à la place de `REVEAL_MOTION_PROMPT` ; `REVEAL_NEGATIVE_PROMPT` et tout le reste du contrat vidéo (FLF strict AD-1, ratio AD-2, queue AD-10, erreurs AD-8) sont inchangés
+
+**Given** aucune instance disponible (backend fal, 204, ou Génération antérieure)
+**When** la Révélation est générée
+**Then** le prompt envoyé est strictement `REVEAL_MOTION_PROMPT` — comportement actuel à l'identique, zéro régression
+
 ## Epic 5: Édition d'image libre
 
 Un second mode d'usage de RoomReveal, choisi dès l'accueil. Au lieu du parcours vidéo, l'utilisateur édite librement une photo de manière itérative : il dessine une zone sur l'image de travail puis **enlève** un objet (effacement, bria eraser) ou **ajoute** un objet décrit au texte (remplissage génératif masqué, flux-fill — l'objet est généré à l'intérieur de la zone, le reste de l'image reste intact). Chaque retouche produit une nouvelle image qui devient la base de la suivante ; l'utilisateur télécharge l'image quand il est satisfait. Aucun rendu vidéo dans ce mode. L'epic réutilise l'éditeur de masque canvas, l'upload/normalisation canonique, le pattern d'adaptateur pipeline, `download-file` et les overlays d'attente/erreur. Modes strictement séparés (`mode` est un état au-dessus du parcours). Référence de design : `docs/plans/2026-07-13-image-edit-mode-design.md`.
