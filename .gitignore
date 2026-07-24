@@ -44,6 +44,7 @@ next-env.d.ts
 # Local detection service (Python)
 local-detect/.venv/
 local-detect/__pycache__/
+local-detect/server.log
 **/__pycache__/
 
 # Local review artifacts (generated videos, not source)
@@ -51,3 +52,6 @@ resultat/
 
 # Playwright MCP session artifacts
 .playwright-mcp/
+
+# Git worktrees (isolated workspaces)
+.worktrees/
