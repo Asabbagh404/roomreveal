@@ -26,14 +26,21 @@ describe("video adapter (AD-5, FLF)", () => {
     subscribe.mockResolvedValue({ data: { video: { url: "u" } } });
     await video("https://fal/empty.png", "https://fal/photo.jpg", opts);
     const [, cfg] = subscribe.mock.calls[0] as [string, { input: Record<string, unknown> }];
-    expect(cfg.input.start_image_url).toBe("https://fal/empty.png"); // Pièce vide = 1re frame
-    expect(cfg.input.end_image_url).toBe("https://fal/photo.jpg"); // Photo originale = dernière frame
+    expect(cfg.input.first_frame_url).toBe("https://fal/empty.png"); // Pièce vide = 1re frame
+    expect(cfg.input.last_frame_url).toBe("https://fal/photo.jpg"); // Photo originale = dernière frame
     expect(typeof cfg.input.prompt).toBe("string");
     expect(typeof cfg.input.negative_prompt).toBe("string"); // anti-morph (calibrated)
-    expect(cfg.input.duration).toBe("5");
   });
 
-  it("does not force an aspect_ratio (ratio inferred from the frames, AR-PIXELS)", async () => {
+  it("requests 720p without audio (cost floor: $0.03/s)", async () => {
+    subscribe.mockResolvedValue({ data: { video: { url: "u" } } });
+    await video("https://fal/empty.png", "https://fal/photo.jpg", opts);
+    const [, cfg] = subscribe.mock.calls[0] as [string, { input: Record<string, unknown> }];
+    expect(cfg.input.resolution).toBe("720p");
+    expect(cfg.input.generate_audio).toBe(false);
+  });
+
+  it("does not force an aspect_ratio (veo 'auto' keeps the frames' ratio, AR-PIXELS)", async () => {
     subscribe.mockResolvedValue({ data: { video: { url: "u" } } });
     await video("https://fal/empty.png", "https://fal/photo.jpg", opts);
     const [, cfg] = subscribe.mock.calls[0] as [string, { input: Record<string, unknown> }];

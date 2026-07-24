@@ -40,7 +40,11 @@ export const MODELS = {
   // DETECT_BACKEND (fal here; local Grounded-SAM point route otherwise). Mask
   // white = the selected object; unioned into the draft mask client-side.
   pointSegment: "fal-ai/sam2/image",
-  video: "fal-ai/kling-video/o1/image-to-video",
+  // Révélation FLF (first/last frame). Swapped from kling o1 (2026-07-24):
+  // Veo 3.1 Lite animates between the two constrained frames, aspect_ratio
+  // defaults to "auto" (keeps the input frames' ratio, AR-PIXELS), and 720p
+  // without audio is the cost floor ($0.03/s).
+  video: "fal-ai/veo3.1/lite/first-last-frame-to-video",
 } as const;
 
 /** Per-step timeouts in ms — the adapter converts an overrun into a StepError (AD-8). */

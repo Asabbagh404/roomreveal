@@ -12,16 +12,17 @@ import type { AdapterOptions, VideoResult } from "./types";
  * Video adapter (AD-5, AD-10, AD-12): a passive async function that runs the
  * FLF (first-and-last-frame) generation on the fal queue and returns the URL of
  * the generated Révélation MP4. FLF STRICT (AD-1): the empty room is the
- * constrained FIRST frame (`start_image_url`) and the untouched canonical photo
- * is the constrained LAST frame (`end_image_url`) — so the furniture animates
- * INTO place (empty → furnished), never a fade. `end_image_url` is always sent
- * (never left optional). No `aspect_ratio` is passed, so the model keeps the
- * input frames' ratio (AR-PIXELS — no forced 16:9). Queue statuses map to
- * WaitPhase via onPhase; the 6 min timeout aborts the fal job and becomes a
- * retryable StepError (AD-8). @fal-ai/client is reached only through ./client.
+ * constrained FIRST frame (`first_frame_url`) and the untouched canonical photo
+ * is the constrained LAST frame (`last_frame_url`) — so the furniture animates
+ * INTO place (empty → furnished), never a fade. `last_frame_url` is always sent
+ * (never left optional). No `aspect_ratio` is passed — veo's default is "auto",
+ * which keeps the input frames' ratio (AR-PIXELS — no forced 16:9). 720p muted
+ * (generate_audio: false) is the cost floor. Queue statuses map to WaitPhase
+ * via onPhase; the 6 min timeout aborts the fal job and becomes a retryable
+ * StepError (AD-8). @fal-ai/client is reached only through ./client.
  * Mirrors inpaint.ts / detect.ts.
  *
- * [ASSUMPTION — calibrate against the live model] kling o1 returns a single
+ * [ASSUMPTION — calibrate against the live model] veo 3.1 lite returns a single
  * `video` object; we read `video.url`. The field mapping below is the single
  * place to adjust; the contract returned to the app ({ reveal }) does not change.
  */
@@ -47,12 +48,12 @@ export async function video(
     const run = fal.subscribe(MODELS.video, {
       input: {
         // FLF strict (AD-1): empty room first, untouched photo last.
-        start_image_url: emptyRoomUrl,
-        end_image_url: photoUrl,
+        first_frame_url: emptyRoomUrl,
+        last_frame_url: photoUrl,
         prompt: REVEAL_MOTION_PROMPT,
-        // @ts-expect-error negative_prompt is a valid kling o1 API field (verified live) that the @fal-ai/client generated input type lags.
         negative_prompt: REVEAL_NEGATIVE_PROMPT,
-        duration: "5",
+        resolution: "720p",
+        generate_audio: false,
       },
       abortSignal: controller.signal,
       // Retain the generated MP4 for 24 h like every fal object (AD-9).
@@ -91,7 +92,7 @@ export async function video(
   }
 }
 
-/** The subset of the kling o1 output the adapter reads. */
+/** The subset of the veo 3.1 lite output the adapter reads. */
 interface VideoRawOutput {
   video?: { url?: string };
 }
