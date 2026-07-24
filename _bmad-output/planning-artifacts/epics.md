@@ -581,6 +581,28 @@ So that la vidéo gagne en cohérence physique et renforce l'effet « wow » (SM
 **When** la Révélation est générée
 **Then** le prompt envoyé est strictement `REVEAL_MOTION_PROMPT` — comportement actuel à l'identique, zéro régression
 
+### Story 4.8: Révélation par Motion Brush (reverse-motion)
+
+_Ajoutée le 2026-07-24 (worktree `reveal-motion-brush`). Promotion de l'approche B (`epics-deferred-improvements.md` §5) après constat que le FLF pur morphe/fade quel que soit le prompt (4.6 inclus). Backend vidéo alternatif derrière `VIDEO_BACKEND`, développé en parallèle de la 4.7 (composite déterministe, autre worktree) ; les deux sont comparés en live et le meilleur devient le défaut. Détail complet : `4-8-revelation-par-motion-brush-reverse-motion.md`._
+
+As a utilisateur,
+I want que les meubles entrent réellement en glissant depuis les bords (mouvement piloté par masque, pas interpolation),
+So that la Révélation cesse de morpher/fondre et se termine exactement sur ma photo meublée.
+
+**Acceptance Criteria:**
+
+**Given** `NEXT_PUBLIC_VIDEO_BACKEND` (`flf` défaut | `motion-brush`)
+**When** l'étape Vidéo génère
+**Then** `flf` conserve exactement le comportement veo 3.1 lite (zéro régression) et `motion-brush` emprunte le chemin Kling Motion Brush ; le service local expose `/instance-masks` (masques SAM par objet + `static_mask` = coquille de la pièce) et `/reverse` (inversion temporelle du MP4 via imageio-ffmpeg)
+
+**Given** le chemin motion-brush
+**When** `videoMotionBrush(photoUrl, instanceMasks, staticMaskUrl)` s'exécute
+**Then** il génère la vidéo meublé→vide via Kling v1.6 pro (`image_url`=photo, `static_mask_url`, `dynamic_masks` avec trajectoires de **sortie**, **sans** `tail_image_url` — exclusif avec les masques), l'inverse via `/reverse`, la ré-uploade sur fal (`uploadArtifact`, AD-9) et renvoie `{ reveal }` : les meubles entrent, dernière frame = photo canonique
+
+**Given** l'architecture
+**When** ce backend produit la Révélation
+**Then** la dernière frame reste la photo intouchée (AD-1 tenu) mais la première frame est générée par le modèle (pièce quasi-vide, PAS l'inpaint) — relâchement AD-1 assumé pour ce backend uniquement, inscrit dans la spine
+
 ## Epic 5: Édition d'image libre
 
 Un second mode d'usage de RoomReveal, choisi dès l'accueil. Au lieu du parcours vidéo, l'utilisateur édite librement une photo de manière itérative : il dessine une zone sur l'image de travail puis **enlève** un objet (effacement, bria eraser) ou **ajoute** un objet décrit au texte (remplissage génératif masqué, flux-fill — l'objet est généré à l'intérieur de la zone, le reste de l'image reste intact). Chaque retouche produit une nouvelle image qui devient la base de la suivante ; l'utilisateur télécharge l'image quand il est satisfait. Aucun rendu vidéo dans ce mode. L'epic réutilise l'éditeur de masque canvas, l'upload/normalisation canonique, le pattern d'adaptateur pipeline, `download-file` et les overlays d'attente/erreur. Modes strictement séparés (`mode` est un état au-dessus du parcours). Référence de design : `docs/plans/2026-07-13-image-edit-mode-design.md`.
