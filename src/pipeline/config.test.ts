@@ -21,6 +21,12 @@ describe("pipeline config registry (AR-CONFIG / AR-PROXY)", () => {
     expect(FAL_ALLOWED_ENDPOINTS).toContain(MODELS.video);
   });
 
+  it("references kling v1.5 pro for the Motion Brush video backend (Story 4.8)", () => {
+    expect(MODELS.videoMotionBrush).toBe("fal-ai/kling-video/v1.5/pro/image-to-video");
+    expect(FAL_ALLOWED_ENDPOINTS).toContain(MODELS.videoMotionBrush);
+    expect(FAL_ALLOWED_ENDPOINTS).toContain(`${MODELS.videoMotionBrush}/**`);
+  });
+
   it("references flux-pro/v1/fill for the edit-add role (Story 5.4)", () => {
     expect(MODELS.editAdd).toBe("fal-ai/flux-pro/v1/fill");
   });

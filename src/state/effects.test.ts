@@ -16,9 +16,17 @@ const pointSegmentLocal = vi.fn();
 const boxSegment = vi.fn();
 const boxSegmentLocal = vi.fn();
 const videoFn = vi.fn();
+const videoMotionBrush = vi.fn();
+const detectInstanceMasks = vi.fn();
 const uploadArtifact = vi.fn();
+// Mutable backend flag so the motion-brush tests can flip it without a second
+// module mock (vi.mock is hoisted; the getter reads this at call time).
+let videoBackend: "flf" | "motion-brush" = "flf";
 vi.mock("@/pipeline", async () => ({
   DETECT_BACKEND: "fal", // these tests cover the default (fal) orchestration path
+  get VIDEO_BACKEND() {
+    return videoBackend;
+  },
   // The REAL prompt builder (pure, no adapter behind it): runVideo's fallback
   // contract — "without instances the prompt IS REVEAL_MOTION_PROMPT" — must be
   // asserted against the true function, not a stub (Story 4.6).
@@ -40,6 +48,8 @@ vi.mock("@/pipeline", async () => ({
   boxSegment: (...a: unknown[]) => boxSegment(...a),
   boxSegmentLocal: (...a: unknown[]) => boxSegmentLocal(...a),
   video: (...a: unknown[]) => videoFn(...a),
+  videoMotionBrush: (...a: unknown[]) => videoMotionBrush(...a),
+  detectInstanceMasks: (...a: unknown[]) => detectInstanceMasks(...a),
   uploadArtifact: (...a: unknown[]) => uploadArtifact(...a),
 }));
 
@@ -91,9 +101,12 @@ afterEach(() => {
   boxSegment.mockReset();
   boxSegmentLocal.mockReset();
   videoFn.mockReset();
+  videoMotionBrush.mockReset();
+  detectInstanceMasks.mockReset();
   uploadArtifact.mockReset();
   encodeMaskPng.mockClear();
   decodeMaskToBuffer.mockReset();
+  videoBackend = "flf"; // restore the default backend after each test
 });
 
 /** State sitting at the video step with an empty room + uploaded photo (post-4.1 entry). */
@@ -717,6 +730,88 @@ describe("runVideo (AD-12 FLF orchestration)", () => {
       step: "video",
       retryable: true,
       userMessage: "La vidéo n'a pas abouti.",
+    });
+    const dispatch = vi.fn();
+
+    await runVideo(videoState(), dispatch, { signal, isStale: notStale });
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "SET_ERROR",
+        error: expect.objectContaining({ step: "video" }),
+      }),
+    );
+  });
+});
+
+describe("runVideo (VIDEO_BACKEND=motion-brush, Story 4.8)", () => {
+  const instanceMasks = {
+    staticMask: "data:image/png;base64,SHELL",
+    instances: [
+      { label: "cabinet", box: [0.1, 0.4, 0.3, 0.6], area: 0.2, mask: "data:image/png;base64,A" },
+    ],
+  };
+
+  it("calls detectInstanceMasks then videoMotionBrush and dispatches VIDEO_SUCCEEDED", async () => {
+    videoBackend = "motion-brush";
+    detectInstanceMasks.mockResolvedValue(instanceMasks);
+    videoMotionBrush.mockResolvedValue({ reveal: "https://fal/reveal.mp4" });
+    const dispatch = vi.fn();
+
+    await runVideo(videoState(), dispatch, { signal, isStale: notStale });
+
+    expect(detectInstanceMasks).toHaveBeenCalledOnce();
+    expect(videoMotionBrush).toHaveBeenCalledWith(
+      "https://fal/photo.jpg", // canonical photo = start frame
+      instanceMasks,
+      expect.anything(),
+    );
+    // The flf adapter must NOT run on the motion-brush path.
+    expect(videoFn).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "VIDEO_SUCCEEDED",
+      revealUrl: "https://fal/reveal.mp4",
+    });
+  });
+
+  it("falls back to the flf path when the service finds no instances (204)", async () => {
+    videoBackend = "motion-brush";
+    detectInstanceMasks.mockResolvedValue({ instances: [], staticMask: "" });
+    videoFn.mockResolvedValue({ reveal: "https://fal/reveal.mp4" });
+    const dispatch = vi.fn();
+
+    await runVideo(videoState(), dispatch, { signal, isStale: notStale });
+
+    expect(videoMotionBrush).not.toHaveBeenCalled();
+    expect(videoFn).toHaveBeenCalledOnce(); // flf reveal still renders
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "VIDEO_SUCCEEDED",
+      revealUrl: "https://fal/reveal.mp4",
+    });
+  });
+
+  it("drops a stale result after detectInstanceMasks (epoch bumped)", async () => {
+    videoBackend = "motion-brush";
+    let stale = false;
+    detectInstanceMasks.mockImplementation(() => {
+      stale = true;
+      return Promise.resolve(instanceMasks);
+    });
+    videoMotionBrush.mockResolvedValue({ reveal: "https://fal/reveal.mp4" });
+    const dispatch = vi.fn();
+
+    await runVideo(videoState(), dispatch, { signal, isStale: () => stale });
+
+    expect(videoMotionBrush).not.toHaveBeenCalled();
+    expect(dispatch.mock.calls.some((c) => c[0].type === "VIDEO_SUCCEEDED")).toBe(false);
+  });
+
+  it("surfaces a mask-detection failure as a retryable video error (AC5)", async () => {
+    videoBackend = "motion-brush";
+    detectInstanceMasks.mockRejectedValue({
+      step: "detect",
+      retryable: true,
+      userMessage: "détection ratée",
     });
     const dispatch = vi.fn();
 

@@ -35,6 +35,32 @@ export interface DetectResult {
 }
 
 /**
+ * One per-object mask for the Motion Brush backend (Story 4.8, local backend
+ * only). `label` is the Grounding DINO concept text (as-is); `box` is
+ * `[x0,y0,x1,y1]` normalized to [0,1] relative to the detection image (AD-2);
+ * `area` is the normalized box area, used to rank objects by size (Kling caps
+ * dynamic brushes at 6); `mask` is the object's SAM mask as a data URL
+ * (white = the object), built by the adapter from the service's base64 PNG.
+ */
+export interface InstanceMask {
+  label: string;
+  box: [number, number, number, number];
+  area: number;
+  mask: string;
+}
+
+/**
+ * Result of the instance-masks adapter (Story 4.8, AD-5). `instances` is the
+ * per-object mask list (empty when no furniture was found, FR-16); `staticMask`
+ * is the room shell (inverse of the union) as a data URL — the Kling static
+ * brush — empty string when there are no instances.
+ */
+export interface InstanceMasksResult {
+  instances: InstanceMask[];
+  staticMask: string;
+}
+
+/**
  * Result of the inpaint adapter (AD-5). `emptyRoom` is the URL of the generated
  * Pièce vide — at canonical dimensions by construction (flux fill preserves the
  * input image's size, and photo + mask share the canonical dims per AD-2/AD-7).

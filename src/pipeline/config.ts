@@ -45,6 +45,15 @@ export const MODELS = {
   // defaults to "auto" (keeps the input frames' ratio, AR-PIXELS), and 720p
   // without audio is the cost floor ($0.03/s).
   video: "fal-ai/veo3.1/lite/first-last-frame-to-video",
+  // Révélation « Motion Brush » (Story 4.8, VIDEO_BACKEND=motion-brush). Kling
+  // v1.5 pro image-to-video drives per-object motion by mask + trajectory
+  // instead of FLF interpolation: image_url = furnished photo, static_mask_url
+  // = room shell, dynamic_masks = the exiting objects. v1.5 pro is the tier that
+  // carries Motion Brush (dynamic_masks + static_mask_url); v1.6 pro dropped them
+  // (its input type only has tail_image_url). `tail_image_url` is mutually
+  // exclusive with the masks (never sent) — the last-frame constraint comes from
+  // reversing the generated exit clip, not the API.
+  videoMotionBrush: "fal-ai/kling-video/v1.5/pro/image-to-video",
 } as const;
 
 /** Per-step timeouts in ms — the adapter converts an overrun into a StepError (AD-8). */
@@ -92,6 +101,27 @@ export const LOCAL_DETECT_URL =
 export const LOCAL_DETECT_TIMEOUT_MS = 180_000;
 
 /**
+ * Video backend. Default is `flf` (the veo 3.1 lite first-last-frame path,
+ * unchanged). Set `NEXT_PUBLIC_VIDEO_BACKEND=motion-brush` to route the reveal
+ * through the Kling Motion Brush reverse-motion path instead (Story 4.8).
+ * Mirrors DETECT_BACKEND; NEXT_PUBLIC_* is inlined at build.
+ */
+export const VIDEO_BACKEND: "flf" | "motion-brush" =
+  process.env.NEXT_PUBLIC_VIDEO_BACKEND === "motion-brush" ? "motion-brush" : "flf";
+
+/**
+ * Local service routes used only by the Motion Brush backend (Story 4.8):
+ * `/instance-masks` (per-object SAM masks + room shell) and `/reverse` (MP4
+ * time-reversal). Mirror LOCAL_DETECT_URL — localhost dev endpoints, not secrets.
+ */
+export const LOCAL_INSTANCE_MASKS_URL =
+  process.env.NEXT_PUBLIC_LOCAL_INSTANCE_MASKS_URL ??
+  "http://localhost:8000/instance-masks";
+
+export const LOCAL_REVERSE_URL =
+  process.env.NEXT_PUBLIC_LOCAL_REVERSE_URL ?? "http://localhost:8000/reverse";
+
+/**
  * Endpoints the proxy allows (AR-PROXY). Passed to the fal server-proxy as its
  * `allowedEndpoints` allowlist — any POST to a model outside this set is refused
  * by the proxy. Glob syntax (picomatch). Storage/queue endpoints are covered by
@@ -120,4 +150,7 @@ export const FAL_ALLOWED_ENDPOINTS: readonly string[] = [
   `${MODELS.pointSegment}`,
   `${MODELS.video}/**`,
   `${MODELS.video}`,
+  // Kling v1.5 pro for the Motion Brush reveal backend (Story 4.8).
+  `${MODELS.videoMotionBrush}/**`,
+  `${MODELS.videoMotionBrush}`,
 ];

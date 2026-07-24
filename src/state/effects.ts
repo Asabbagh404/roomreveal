@@ -1,4 +1,4 @@
-import { DETECT_BACKEND, autoEmptyRoom, buildModifyPrompt, buildRevealMotionPrompt, detect, detectLocal, editAdd, editModify, editRemove, findTexture, inpaint, pointSegment, pointSegmentLocal, resolveTextureUrl, uploadArtifact, video } from "@/pipeline";
+import { DETECT_BACKEND, VIDEO_BACKEND, autoEmptyRoom, buildModifyPrompt, buildRevealMotionPrompt, detect, detectInstanceMasks, detectLocal, editAdd, editModify, editRemove, findTexture, inpaint, pointSegment, pointSegmentLocal, resolveTextureUrl, uploadArtifact, video, videoMotionBrush } from "@/pipeline";
 import type { EditResult } from "@/pipeline";
 import { encodeMaskPng } from "@/lib/mask-encode";
 import { isBufferEmpty } from "@/lib/mask-buffer";
@@ -436,7 +436,10 @@ export async function runVideo(
 ): Promise<void> {
   const photo = state.originalPhoto;
   const emptyRoomUrl = state.emptyRoom;
-  if (photo === undefined || emptyRoomUrl === undefined) return;
+  // Motion Brush consumes only the photo (masks + reverse-motion); the flf path
+  // interpolates between the empty room and the photo, so it needs both.
+  if (photo === undefined) return;
+  if (VIDEO_BACKEND !== "motion-brush" && emptyRoomUrl === undefined) return;
 
   const dead = () => signal.aborted || isStale();
   const onPhase = (phase: WaitPhase) => {
@@ -459,6 +462,45 @@ export async function runVideo(
     // callback — the video job is long (UX-DR11: no silent spinner). Monotonicity
     // (AD-14) accepts the real queued/generating/finalizing that follow.
     if (!dead()) dispatch({ type: "SET_WAIT_PHASE", phase: "queued" });
+
+    // Motion Brush backend (Story 4.8): drive the reveal by object masks +
+    // trajectories instead of FLF interpolation. Detect the per-object masks
+    // just-in-time (local service), then run the reverse-motion adapter. If the
+    // service finds no furniture (204 → empty instances), fall through to the
+    // flf path so the reveal still renders.
+    if (VIDEO_BACKEND === "motion-brush") {
+      // detectInstanceMasks throws a `detect` StepError by contract, but here it
+      // is part of producing the reveal — re-map to `video` so the retry lands
+      // on the Vidéo step, not Détection (AC5). videoMotionBrush already throws
+      // `video`, so the outer catch handles it as-is.
+      // Detect on the CANONICAL photo blob, not the detection copy: local
+      // Grounded-SAM works fine at canonical res, and the masks/trajectories
+      // must match image_url = the canonical photo (the ≥1536 requirement was
+      // fal SAM 3 only).
+      const masks = await detectInstanceMasks(photo.blob, {
+        signal,
+        onPhase,
+      }).catch((err) => {
+        if (dead()) throw err; // dropped below; step doesn't matter
+        throw makeStepError("video", true);
+      });
+      if (dead()) return; // superseded or cancelled — drop the result
+      if (masks.instances.length > 0) {
+        const mbResult = await videoMotionBrush(photoUrl, masks, { signal, onPhase });
+        if (dead()) return;
+        dispatch({ type: "VIDEO_SUCCEEDED", revealUrl: mbResult.reveal });
+        return;
+      }
+      // No instances — fall back to the flf path below (still renders a reveal).
+      console.warn(
+        "[motion-brush] no usable instances (204 / empty) — falling back to the flf reveal path",
+      );
+    }
+
+    // The flf path interpolates between the empty room and the photo — it needs
+    // the empty room. Under motion-brush the guard above allowed a missing empty
+    // room; if the fallback is reached without one, there is nothing to render.
+    if (emptyRoomUrl === undefined) throw makeStepError("video", true);
 
     // Motion prompt (Story 4.6, AD-12): built HERE from the detected instances
     // — the adapter stays passive. Without instances (fal backend, 204, older

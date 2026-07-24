@@ -9,3 +9,6 @@ transformers>=4.40
 pillow
 numpy
 accelerate
+# Motion Brush backend (Story 4.8): imageio + a static ffmpeg binary (pip only,
+# no system dependency) for the /reverse route's time-reversal.
+imageio[ffmpeg]

@@ -18,10 +18,10 @@ so that la Révélation cesse de ressembler à un « rêve fiévreux » qui morp
 
 1. **Backend sélectionnable** — **Given** `NEXT_PUBLIC_VIDEO_BACKEND` (`flf` défaut | `motion-brush`), **When** l'étape Vidéo génère, **Then** `flf` conserve **exactement** le comportement veo 3.1 lite actuel (zéro régression) et `motion-brush` emprunte le nouveau chemin Kling Motion Brush. Le flag vit dans `config.ts` (miroir de `DETECT_BACKEND`).
 2. **Masques par instance (service local)** — **Given** le service Grounded-SAM, **When** le nouveau chemin en a besoin, **Then** une route `/instance-masks` renvoie un JSON `{ instances: [{label, box[0,1], area, mask: PNG base64}], static_mask: PNG base64 }` : chaque `mask` est le masque SAM **par objet** (déjà calculé dans `_segment_union` avant l'union), `static_mask` est l'inverse de l'union (la coquille de la pièce = brosse statique Kling). 204 si aucun meuble. `/detect`, `/point`, `/box` **inchangés**.
-3. **Adaptateur Motion Brush** — **Given** la photo canonique et les masques par instance, **When** `videoMotionBrush(photoUrl, instanceMasks, staticMaskUrl, opts)` s'exécute, **Then** il uploade chaque masque sur fal (`uploadArtifact`), construit les `dynamic_masks` (un par objet : `mask_url` + `trajectories` = points de **sortie** dérivés de la boîte, direction inverse de l'heuristique 4.6), appelle `MODELS.videoMotionBrush` (`fal-ai/kling-video/v1.6/pro/image-to-video`) avec `image_url` = photo, `static_mask_url`, `dynamic_masks`, `prompt` (meubles glissant hors champ), `duration:"5"` — produisant la vidéo de **sortie** (meublé → vide).
-4. **Inversion → reveal** — **Given** la vidéo de sortie générée, **When** l'adaptateur finalise, **Then** il la POST à la route locale `/reverse` (inversion temporelle via `imageio-ffmpeg`, binaire statique pip — aucune dépendance système), ré-uploade le MP4 inversé via `uploadArtifact`, et renvoie `{ reveal }` : les meubles **entrent** et la vidéo se termine **exactement sur la photo meublée** (dernière frame = photo canonique, garantie par construction).
+3. **Adaptateur Motion Brush** — **Given** la photo canonique et les masques par instance, **When** `videoMotionBrush(photoUrl, instanceMasks, staticMaskUrl, opts)` s'exécute, **Then** il uploade chaque masque sur fal (`uploadArtifact`), construit les `dynamic_masks` (un par objet : `mask_url` + `trajectories` = points de **sortie** dérivés de la boîte, direction inverse de l'heuristique 4.6), appelle `MODELS.videoMotionBrush` (`fal-ai/kling-video/v1.5/pro/image-to-video`) avec `image_url` = photo, `static_mask_url`, `dynamic_masks`, `prompt` (meubles glissant hors champ), `duration:"5"` — produisant la vidéo de **sortie** (meublé → vide).
+4. **Inversion → reveal** — **Given** la vidéo de sortie générée, **When** l'adaptateur finalise, **Then** il la POST à la route locale `/reverse` (inversion temporelle via `imageio-ffmpeg`, binaire statique pip — aucune dépendance système), ré-uploade le MP4 inversé via `uploadArtifact`, et renvoie `{ reveal }` : les meubles **entrent** et la vidéo se termine sur le **rendu du modèle ré-encodé** — visuellement la photo meublée, mais **pas** pixel-exact (l'inversion est un ré-encodage avec perte). L'invariant strict de dernière frame (AD-1) est donc **approximé** par ce backend, pas tenu au pixel près.
 5. **Orchestration** — **Given** `runVideo`, **When** `VIDEO_BACKEND === "motion-brush"`, **Then** la couche effectrice appelle `detectInstanceMasks(photo)` (juste-à-temps, chemin local) puis `videoMotionBrush(...)` sous les mêmes gardes AD-12 (AbortController, epoch, `dead()`) que le chemin flf ; échec → `StepError("video", true)` inchangé.
-6. **Amendement de spine documenté** — la première frame du backend motion-brush est **générée par le modèle** (pièce quasi-vide après sortie des meubles), **pas** notre inpaint (`generation.emptyRoom` n'est pas consommée par ce backend) ; la dernière frame reste la photo canonique intouchée. AD-1 (dernière frame contrainte) tenu ; la contrainte « première frame = Pièce vide exacte » est **relâchée pour ce backend uniquement**, décision pré-acceptée en choisissant l'approche 2. À inscrire dans ARCHITECTURE-SPINE (note d'amendement AD-1/AD-2).
+6. **Amendement de spine documenté** — la première frame du backend motion-brush est **générée par le modèle** (pièce quasi-vide après sortie des meubles), **pas** notre inpaint (`generation.emptyRoom` n'est pas consommée par ce backend) ; la dernière frame est le **rendu du modèle ré-encodé** (visuellement la photo meublée, pas pixel-exact). AD-1 (dernière frame contrainte) **approximé** par ce backend, pas tenu au pixel près ; la contrainte « première frame = Pièce vide exacte » est **relâchée pour ce backend uniquement**, décision pré-acceptée en choisissant l'approche 2. À inscrire dans ARCHITECTURE-SPINE (note d'amendement AD-1/AD-2).
 7. Suites Vitest existantes vertes ; `tsc`, lint sans nouvelle erreur ; `py_compile` du service OK ; `local-detect/README.md` documente `/instance-masks` et `/reverse`.
 
 ## Tasks / Subtasks
@@ -39,7 +39,7 @@ so that la Révélation cesse de ressembler à un « rêve fiévreux » qui morp
 - [ ] Task 4 — Heuristique trajectoire de sortie (pure) (AC: 3)
   - [ ] `motion-trajectory.ts` : `exitTrajectory(box, width, height): {x,y}[]` — centre boîte → bord le plus proche (inverse de `entryDirection` de 4.6), points en pixels image (+ test pur, 4 directions)
 - [ ] Task 5 — Adaptateur `videoMotionBrush` (AC: 3, 4)
-  - [ ] `video-motion-brush.ts` : upload masques → `dynamic_masks`+`static_mask_url` → kling v1.6 pro (sortie) → fetch → `/reverse` → `uploadArtifact` → `{ reveal }` ; passif AD-12, timeout, header 24 h, `StepError("video")` (+ test : mocks `./client`, `fetch(/reverse)`, `uploadArtifact`)
+  - [ ] `video-motion-brush.ts` : upload masques → `dynamic_masks`+`static_mask_url` → kling v1.5 pro (sortie) → fetch → `/reverse` → `uploadArtifact` → `{ reveal }` ; passif AD-12, timeout, header 24 h, `StepError("video")` (+ test : mocks `./client`, `fetch(/reverse)`, `uploadArtifact`)
 - [ ] Task 6 — Orchestration + spine (AC: 5, 6)
   - [ ] `effects.ts#runVideo` : branche `VIDEO_BACKEND` — `flf` inchangé ; `motion-brush` = `detectInstanceMasks(photo)` puis `videoMotionBrush` (+ test des 2 branches, gardes `dead()`)
   - [ ] `pipeline/index.ts` : exports ; `ARCHITECTURE-SPINE.md` : note d'amendement AD-1 (première frame relâchée pour ce backend)
@@ -54,9 +54,9 @@ so that la Révélation cesse de ressembler à un « rêve fiévreux » qui morp
 - **Approche 2 = Motion Brush** : on pilote le mouvement par masque + trajectoire au lieu de l'interpolation. Contrainte API dure (doc Kling, vérifiée) : `image_tail` (frame de fin) est **mutuellement exclusif** avec `dynamic_masks`/`static_mask`/`camera_control`. On ne peut donc pas contraindre la dernière frame en utilisant les masques → on génère **à l'envers** (départ = photo meublée = frame parfaitement contrainte, meubles sortent) puis on **inverse le MP4** → meubles entrent, fin sur la photo. C'est le prix de la vraie lumière/ombre AI pendant le mouvement.
 - L'autre worktree fait la 4.7 (composite déterministe client, garanti propre, 0 $). 4.8 et 4.7 coexistent derrière le flag `VIDEO_BACKEND` — comparaison live, le meilleur gagne. Ne PAS toucher au chemin flf ni au travail composite.
 
-### Contrat Kling v1.6 pro image-to-video (fal, vérifié 2026-07-24)
+### Contrat Kling v1.5 pro image-to-video (fal, vérifié 2026-07-24)
 
-`image_url` (requis, frame de départ) · `prompt` (requis) · `duration` ("5"|"10") · `tail_image_url` (**exclu** avec masques — NE PAS l'envoyer ici) · `static_mask_url` (zone brosse statique = ne bouge pas) · `dynamic_masks` (liste : `{ mask_url, trajectories: [{x,y}, …] }`, ≤ 6 éléments, points en **pixels image**) · `negative_prompt` · `cfg_scale` (déf 0.5). Sortie `{ video: { url } }`. Prix ~0,10 $/5 s standard (à confirmer live).
+`image_url` (requis, frame de départ) · `prompt` (requis) · `duration` ("5"|"10") · `tail_image_url` (**exclu** avec masques — NE PAS l'envoyer ici) · `static_mask_url` (zone brosse statique = ne bouge pas) · `dynamic_masks` (liste : `{ mask_url, trajectories: [{x,y}, …] }`, ≤ 6 éléments, points en **pixels image**) · `negative_prompt` · `cfg_scale` (déf 0.5). Sortie `{ video: { url } }`. Prix ~0,10 $/5 s standard (à confirmer live). Note : les champs Motion Brush (`dynamic_masks`+`static_mask_url`) sont portés par **v1.5 pro** (`KlingVideoV15ProImageToVideoInput`) ; v1.6 pro les a **retirés** (son type d'entrée n'a que `tail_image_url`).
 
 ### État en place (NE PAS recréer / NE PAS casser)
 
@@ -69,7 +69,7 @@ so that la Révélation cesse de ressembler à un « rêve fiévreux » qui morp
 
 ### Contraintes d'architecture (spine)
 
-- **AD-1** : dernière frame = photo canonique intouchée — TENU (l'inversion démarre d'elle). Première frame relâchée pour ce backend (AC 6) — amendement à inscrire, décision produit assumée.
+- **AD-1** : dernière frame = rendu du modèle ré-encodé (visuellement la photo canonique, pas pixel-exact) — **APPROXIMÉ**, pas tenu au pixel près (l'inversion est un ré-encodage avec perte). Première frame relâchée pour ce backend (AC 6) — amendement à inscrire, décision produit assumée.
 - **AD-2** : pas d'`aspect_ratio` forcé ; masques et trajectoires en pixels de l'image canonique/détection ; ratio préservé de bout en bout.
 - **AD-5** : `@fal-ai/client` seulement via `pipeline/` ; `videoMotionBrush` référence le modèle par rôle (`config.ts`).
 - **AD-8** : tout échec (fal, /reverse, upload) → `StepError("video", true)` ; jamais d'erreur brute en UI.
@@ -110,7 +110,7 @@ so that la Révélation cesse de ressembler à un « rêve fiévreux » qui morp
 ### References
 
 - [Source: epics-deferred-improvements.md#5 — approche B (promue ici)]
-- [Source: recherche web 2026-07-24 : fal kling v1.6 pro (dynamic_masks + tail_image_url), doc API Kling (exclusivité image_tail × masques), guide FLF « garder les frames similaires »]
+- [Source: recherche web 2026-07-24 : fal kling v1.5 pro (dynamic_masks + static_mask_url), doc API Kling (exclusivité image_tail × masques), guide FLF « garder les frames similaires »]
 - [Source: 4-6-*.md — heuristique de direction (inversée ici), patron adaptateur/effets, contrat service local]
 - [Source: src/pipeline/video.ts, detect-local.ts, config.ts ; src/state/effects.ts:432 ; local-detect/server.py]
 - [Source: ARCHITECTURE-SPINE.md#AD-1,AD-2,AD-5,AD-8,AD-9,AD-12,AD-14]

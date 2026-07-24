@@ -20,7 +20,9 @@ from __future__ import annotations
 import base64
 import io
 import json
+import tempfile
 
+import imageio.v3 as iio
 import numpy as np
 import torch
 from fastapi import FastAPI, File, Form, UploadFile
@@ -140,6 +142,34 @@ def _segment_union(m: dict, image: Image.Image, boxes: torch.Tensor) -> np.ndarr
         best = int(torch.argmax(scores[i]))  # highest-IoU mask per box
         union |= masks[i, best].numpy().astype(bool)
     return union
+
+
+def _segment_instances(
+    m: dict, image: Image.Image, boxes: torch.Tensor
+) -> list[np.ndarray]:
+    """SAM over every box -> the PER-OBJECT masks as a list of bool arrays [H, W].
+
+    Same forward pass and best-mask-per-box selection as `_segment_union`, but
+    keeps each object's mask separate instead of OR-ing them together. `/detect`
+    and its union are untouched; this powers the Motion Brush backend
+    (`/instance-masks`, Story 4.8), which needs one dynamic brush per object.
+    """
+    inputs = m["sam_processor"](
+        image, input_boxes=[boxes.tolist()], return_tensors="pt"
+    ).to(DEVICE)
+    with torch.no_grad():
+        outputs = m["sam_model"](**inputs)
+    masks = m["sam_processor"].image_processor.post_process_masks(
+        outputs.pred_masks.cpu(),
+        inputs["original_sizes"].cpu(),
+        inputs["reshaped_input_sizes"].cpu(),
+    )[0]  # tensor [n_boxes, n_multimask, H, W]
+    scores = outputs.iou_scores.cpu()[0]  # [n_boxes, n_multimask]
+    instances: list[np.ndarray] = []
+    for i in range(masks.shape[0]):
+        best = int(torch.argmax(scores[i]))  # highest-IoU mask per box (as union)
+        instances.append(masks[i, best].numpy().astype(bool))
+    return instances
 
 
 def _segment_point(m: dict, image: Image.Image, x: int, y: int) -> np.ndarray:
@@ -264,3 +294,106 @@ async def detect(image: UploadFile = File(...), prompts: str = Form(...)) -> Res
             "instances": instances,
         }
     )
+
+
+def _mask_b64(mask: np.ndarray) -> str:
+    """Encode a bool mask as a base64 binary PNG (white = mask)."""
+    mask_img = Image.fromarray((mask * 255).astype(np.uint8), mode="L")
+    buf = io.BytesIO()
+    mask_img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+@app.post("/instance-masks")
+async def instance_masks(
+    image: UploadFile = File(...), prompts: str = Form(...)
+) -> Response:
+    """Per-object SAM masks + the room shell, for the Motion Brush backend (4.8).
+
+    Same detection as `/detect` (Grounding DINO -> SAM), but instead of one
+    unioned mask it returns each object's mask separately (the Kling dynamic
+    brushes) plus `static_mask` = the inverse of their union (the room shell =
+    the Kling static brush). Boxes are normalized to [0,1] and clamped like
+    `/detect`. 204 when no furniture (FR-16) — same contract as `/detect`.
+    `/detect`, `/point`, `/box` are untouched.
+    """
+    m = _ensure_models()
+    concepts = json.loads(prompts)
+    pil = Image.open(io.BytesIO(await image.read())).convert("RGB")
+
+    boxes, labels = _detect_boxes(m, pil, concepts)
+    if boxes.numel() == 0:
+        return Response(status_code=204)  # no furniture (FR-16)
+
+    masks = _segment_instances(m, pil, boxes)
+    w, h = pil.size
+    union = np.zeros((h, w), dtype=bool)
+    for mask in masks:
+        union |= mask
+    if not union.any():
+        return Response(status_code=204)
+
+    def _norm(value: float, size: int) -> float:
+        # GDINO boxes can spill past the frame — clamp to honor the [0,1] contract.
+        return min(max(value / size, 0.0), 1.0)
+
+    instances = [
+        {
+            "label": label,
+            "box": [_norm(x0, w), _norm(y0, h), _norm(x1, w), _norm(y1, h)],
+            # Clamp each side to >=0: an inverted GDINO box (x1<x0) must not yield
+            # a negative area that would invert the largest-first cap downstream.
+            "area": max(0.0, _norm(x1, w) - _norm(x0, w))
+            * max(0.0, _norm(y1, h) - _norm(y0, h)),
+            "mask": _mask_b64(mask),
+        }
+        for (x0, y0, x1, y1), label, mask in zip(
+            boxes.tolist(), labels, masks, strict=True
+        )
+    ]
+    return JSONResponse(
+        {
+            "instances": instances,
+            # The room shell = everything the furniture does NOT cover, the Kling
+            # static brush (walls/floor/windows must not move).
+            "static_mask": _mask_b64(~union),
+        }
+    )
+
+
+@app.post("/reverse")
+async def reverse(video: UploadFile = File(...)) -> Response:
+    """Time-reverse an MP4 (Motion Brush backend, Story 4.8).
+
+    The Motion Brush path generates the furnished->empty exit clip, then reverses
+    it here so the furniture ENTERS and the last frame is the untouched photo.
+    Self-contained: `imageio[ffmpeg]` ships a static ffmpeg binary (pip only, no
+    system dependency), so this has no effect on the model lazy loading. Reads
+    all frames, reverses their order, re-encodes at the SAME fps. A transient
+    local transform (like detection), not storage — the caller re-uploads the
+    result to fal (AD-9).
+    """
+    raw = await video.read()
+    try:
+        # imageio needs a real file for the ffmpeg reader/metadata (fps); use a temp.
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as src:
+            src.write(raw)
+            src.flush()
+            frames = list(iio.imiter(src.name, plugin="FFMPEG"))
+            meta = iio.immeta(src.name, plugin="FFMPEG")
+        # A video that decodes to zero frames cannot be reversed/encoded — reject
+        # it cleanly instead of letting imwrite raise a generic 500.
+        if not frames:
+            return Response(status_code=422)
+        # Robust fps read: a missing/zero/non-numeric value falls back to 24.0.
+        fps = meta.get("fps") or 24.0
+        if not (isinstance(fps, (int, float)) and fps > 0):
+            fps = 24.0
+        reversed_frames = list(reversed(frames))
+        out = iio.imwrite(
+            "<bytes>", reversed_frames, extension=".mp4", plugin="FFMPEG", fps=float(fps)
+        )
+    except Exception:
+        # Never leak an ffmpeg stack / generic 500 — a bad upload is a 422.
+        return Response(status_code=422)
+    return Response(content=out, media_type="video/mp4")

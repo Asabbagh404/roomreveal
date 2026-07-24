@@ -109,6 +109,44 @@ curl -F image=@photo.jpg -F 'prompts=["cabinet","refrigerator"]' \
 `POST /point` and `POST /box` are unchanged: they still return a raw
 `image/png` binary mask (the edit-mode selection tools depend on that).
 
+### Motion Brush backend routes (Story 4.8)
+
+These power the alternative `NEXT_PUBLIC_VIDEO_BACKEND=motion-brush` reveal path.
+`/detect`, `/point`, `/box` and the model lazy loading are all untouched.
+
+`POST /instance-masks` (multipart): same inputs as `/detect` (`image` +
+`prompts`). Runs the **same** detection, but returns each object's SAM mask
+separately (the Kling dynamic brushes) plus the room shell (the static brush):
+
+```json
+{
+  "instances": [
+    { "label": "cabinet", "box": [0.1, 0.2, 0.45, 0.9], "area": 0.245,
+      "mask": "<base64 binary PNG, white = this object>" }
+  ],
+  "static_mask": "<base64 binary PNG, white = the room shell (inverse of the union)>"
+}
+```
+
+Returns `204 No Content` when nothing is detected (same FR-16 contract as
+`/detect`). `box` is `[x0,y0,x1,y1]` normalized to `[0,1]` and clamped.
+
+```bash
+curl -F image=@photo.jpg -F 'prompts=["cabinet","refrigerator"]' \
+  localhost:8000/instance-masks
+# → {"instances":[{"label":"cabinet","mask":"iVBOR..."}],"static_mask":"iVBOR..."}
+```
+
+`POST /reverse` (multipart, field `video`): accepts an MP4 and returns the
+time-reversed MP4 (`video/mp4`), same fps. Uses the static ffmpeg binary shipped
+by `imageio[ffmpeg]` (no system dependency). It is a transient local transform
+(like detection) — the caller re-uploads the result to fal, this service stores
+nothing.
+
+```bash
+curl -F video=@exit.mp4 localhost:8000/reverse --output reveal.mp4
+```
+
 ## Tuning
 
 In `server.py`: `BOX_THRESHOLD` / `TEXT_THRESHOLD` (lower = more, looser

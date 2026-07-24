@@ -15,13 +15,17 @@ export { pointSegment, boxSegment } from "./point-segment";
 export type { SelectBox } from "./point-segment";
 export { pointSegmentLocal, boxSegmentLocal } from "./point-segment-local";
 export { video } from "./video";
-export { DETECT_BACKEND } from "./config";
+export { videoMotionBrush } from "./video-motion-brush";
+export { detectInstanceMasks } from "./instance-masks";
+export { DETECT_BACKEND, VIDEO_BACKEND } from "./config";
 export type {
   AdapterOptions,
   DetectedInstance,
   DetectResult,
   EditResult,
   InpaintResult,
+  InstanceMask,
+  InstanceMasksResult,
   PointSegmentResult,
   VideoResult,
 } from "./types";
