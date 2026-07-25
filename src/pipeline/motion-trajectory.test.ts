@@ -11,36 +11,36 @@ describe("exitTrajectory (Story 4.8 — pure exit paths)", () => {
     expect(traj[0]).toEqual({ x: 500, y: 400 }); // center in pixels
   });
 
-  it("exits LEFT when the center is nearest the left edge", () => {
-    // center ≈ (150, 400): closest edge is left.
+  it("exits LEFT (off-frame) when the center is nearest the left edge", () => {
+    // center ≈ (150, 400): closest edge is left; endpoint pushed past x=0.
     const traj = exitTrajectory([0.1, 0.4, 0.2, 0.6], W, H);
     const exit = traj[traj.length - 1];
-    expect(exit.x).toBe(0);
+    expect(exit.x).toBeLessThan(0); // off-frame so the piece fully clears
     expect(exit.y).toBe(400);
   });
 
-  it("exits RIGHT when the center is nearest the right edge", () => {
-    // center ≈ (900, 400): closest edge is right.
+  it("exits RIGHT (off-frame) when the center is nearest the right edge", () => {
+    // center ≈ (900, 400): closest edge is right; endpoint pushed past width.
     const traj = exitTrajectory([0.85, 0.4, 0.95, 0.6], W, H);
     const exit = traj[traj.length - 1];
-    expect(exit.x).toBe(W - 1); // clamped inside the frame (integer pixels, Kling)
+    expect(exit.x).toBeGreaterThan(W);
     expect(exit.y).toBe(400);
   });
 
-  it("exits TOP when the center is nearest the top edge", () => {
-    // center ≈ (500, 80): closest edge is top.
+  it("exits TOP (off-frame) when the center is nearest the top edge", () => {
+    // center ≈ (500, 80): closest edge is top; endpoint pushed past y=0.
     const traj = exitTrajectory([0.4, 0.05, 0.6, 0.15], W, H);
     const exit = traj[traj.length - 1];
     expect(exit.x).toBe(500);
-    expect(exit.y).toBe(0);
+    expect(exit.y).toBeLessThan(0);
   });
 
-  it("exits BOTTOM when the center is nearest the bottom edge", () => {
-    // center ≈ (500, 760): closest edge is bottom.
+  it("exits BOTTOM (off-frame) when the center is nearest the bottom edge", () => {
+    // center ≈ (500, 760): closest edge is bottom; endpoint pushed past height.
     const traj = exitTrajectory([0.4, 0.9, 0.6, 1.0], W, H);
     const exit = traj[traj.length - 1];
     expect(exit.x).toBe(500);
-    expect(exit.y).toBe(H - 1); // clamped inside the frame (integer pixels, Kling)
+    expect(exit.y).toBeGreaterThan(H);
   });
 
   it("is deterministic and points OUTWARD (center then edge, not the reverse)", () => {
@@ -48,9 +48,9 @@ describe("exitTrajectory (Story 4.8 — pure exit paths)", () => {
     const a = exitTrajectory(box, W, H);
     const b = exitTrajectory(box, W, H);
     expect(a).toEqual(b); // deterministic
-    // First point is inside the frame, last is on an edge (x === 0 here).
+    // First point is inside the frame, last is off-frame to the left (x < 0).
     expect(a[0].x).toBeGreaterThan(0);
-    expect(a[a.length - 1].x).toBe(0);
+    expect(a[a.length - 1].x).toBeLessThan(0);
   });
 
   it("returns INTEGER pixel coordinates (Kling rejects fractional x/y with 422)", () => {
@@ -63,9 +63,11 @@ describe("exitTrajectory (Story 4.8 — pure exit paths)", () => {
   });
 
   it("resolves a dead-center object to the left edge (tie order left→right→top→bottom)", () => {
-    // Dead center of a square: all four edges tie at 500 — left wins the tie.
+    // Dead center of a square: all four edges tie at 500 — left wins the tie,
+    // endpoint pushed off-frame past x=0.
     const traj = exitTrajectory([0.45, 0.45, 0.55, 0.55], 1000, 1000);
     const exit = traj[traj.length - 1];
-    expect(exit).toEqual({ x: 0, y: 500 });
+    expect(exit.x).toBeLessThan(0);
+    expect(exit.y).toBe(500);
   });
 });

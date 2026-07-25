@@ -44,23 +44,29 @@ export function exitTrajectory(
 
   // Nearest edge wins. Deterministic tie order: left, right, top, bottom — so a
   // dead-center object exits left, and horizontal beats vertical on equal ties.
+  // The exit point is pushed BEYOND the frame edge (one full margin past it) so
+  // the object actually LEAVES — a target clamped inside the frame told Kling to
+  // stop the piece at the border, which read as an in-place deformation instead
+  // of a translation out (live 2026-07-25). Reversed, an off-frame start is what
+  // makes the furniture slide IN from outside.
+  const marginX = Math.round(width * 0.6);
+  const marginY = Math.round(height * 0.6);
   const nearest = Math.min(distLeft, distRight, distTop, distBottom);
   let exit: { x: number; y: number };
   if (nearest === distLeft) {
-    exit = { x: 0, y: cy };
+    exit = { x: -marginX, y: cy };
   } else if (nearest === distRight) {
-    exit = { x: width, y: cy };
+    exit = { x: width + marginX, y: cy };
   } else if (nearest === distTop) {
-    exit = { x: cx, y: 0 };
+    exit = { x: cx, y: -marginY };
   } else {
-    exit = { x: cx, y: height };
+    exit = { x: cx, y: height + marginY };
   }
 
-  // Kling requires integer pixel coordinates; round and clamp to the frame.
-  const toPixel = (p: { x: number; y: number }) => ({
-    x: Math.min(Math.max(Math.round(p.x), 0), width - 1),
-    y: Math.min(Math.max(Math.round(p.y), 0), height - 1),
-  });
+  // Kling requires integer pixel coordinates (it 422s on fractional x/y). The
+  // exit point is intentionally off-frame (negative or > width/height) so the
+  // piece fully clears — only the coordinates are rounded, never clamped.
+  const round = (p: { x: number; y: number }) => ({ x: Math.round(p.x), y: Math.round(p.y) });
 
-  return [toPixel({ x: cx, y: cy }), toPixel(exit)];
+  return [round({ x: cx, y: cy }), round(exit)];
 }
