@@ -62,6 +62,10 @@ export const TIMEOUTS_MS = {
   inpaint: 60_000,
   emptyRoomAuto: 120_000,
   video: 360_000,
+  // Motion Brush (Story 4.8): Kling v1.5 pro with masks is markedly slower than
+  // the veo FLF path, and the adapter chains Kling + /reverse + re-upload after
+  // it. Live: the job was still IN_PROGRESS past 6 min. Allow 15 min.
+  videoMotionBrush: 900_000,
   // Free-edit retouch (Story 5.3 remove = bria eraser; 5.4 add = flux fill).
   edit: 90_000,
   editAdd: 90_000,

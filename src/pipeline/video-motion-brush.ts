@@ -62,7 +62,7 @@ export async function videoMotionBrush(
     timeout = setTimeout(() => {
       controller.abort();
       reject(makeStepError("video", true));
-    }, TIMEOUTS_MS.video);
+    }, TIMEOUTS_MS.videoMotionBrush);
   });
 
   try {
