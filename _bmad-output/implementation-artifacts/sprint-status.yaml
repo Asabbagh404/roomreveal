@@ -43,10 +43,11 @@
 #   their stories will be added here once the epic breakdown is extended.
 
 generated: 2026-07-10
-last_updated: 2026-07-24
+last_updated: 2026-07-25
 # Epic 5 reopened 2026-07-13: Story 5.6 (sélection d'objet au clic, SAM point-prompt) added.
 # Epic 4 reopened 2026-07-24: Story 4.6 (prompt de mouvement piloté par les détections) added.
 # Epic 4 (worktree reveal-motion-brush): Story 4.8 (Motion Brush reverse-motion) added 2026-07-24. NB: 4.7 (composite déterministe) est développée en parallèle sur un autre worktree — les deux sont des backends vidéo alternatifs.
+# Epic 4 (worktree reveal-motion-brush): Story 4.9 (timelapse chantier) added 2026-07-25 — pivot après verdict 3/3 (FLF morphe, composite rejeté, motion-brush déforme).
 project: flux_test
 # Epic 4 stories (4.1-4.5) registered 2026-07-12 via sprint-planning.
 # Epic 5 stories (5.1-5.5) registered 2026-07-13 via sprint-planning (mode « Édition d'image libre »).
@@ -81,6 +82,7 @@ development_status:
   4-5-cout-unitaire-documente-deploiement-de-l-instance-demo: done
   4-6-prompt-de-mouvement-pilote-par-les-detections: done
   4-8-revelation-par-motion-brush-reverse-motion: done
+  4-9-revelation-timelapse-chantier: ready-for-dev
   epic-4-retrospective: optional
   epic-5: in-progress
   5-1-ecran-d-accueil-selection-du-mode: done

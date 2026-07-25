@@ -603,6 +603,24 @@ So that la Révélation cesse de morpher/fondre et se termine exactement sur ma 
 **When** ce backend produit la Révélation
 **Then** la dernière frame reste la photo intouchée (AD-1 tenu) mais la première frame est générée par le modèle (pièce quasi-vide, PAS l'inpaint) — relâchement AD-1 assumé pour ce backend uniquement, inscrit dans la spine
 
+### Story 4.9: Révélation « timelapse chantier » (movers/ouvriers)
+
+_Ajoutée le 2026-07-25 (worktree `reveal-motion-brush`). Pivot après le verdict live 3/3 : le FLF pur morphe (4.1/4.6), le composite est rejeté (4.7), le Motion Brush déforme (4.8). Au lieu de CACHER le morphing, on l'ABSORBE par le format : des déménageurs apportent les meubles un par un à vitesse timelapse (mécanisme causal + occlusion). Test d'hypothèse ~0,50 € sur le chemin veo 3.1 FLF existant, avant tout investissement self-hosted. Détail : `4-9-revelation-timelapse-chantier.md`._
+
+As a utilisateur,
+I want que ma Révélation ressemble à un timelapse d'emménagement — des déménageurs posent chaque meuble un par un,
+So that les artefacts d'interpolation deviennent invisibles (le chaos = « le travail avance ») et la vidéo gagne l'effet « wow » viral (SM-1).
+
+**Acceptance Criteria:**
+
+**Given** `NEXT_PUBLIC_VIDEO_BACKEND` étendu (`flf` défaut | `motion-brush` | `timelapse`)
+**When** l'étape Vidéo génère
+**Then** `flf` et `motion-brush` sont inchangés ; `timelapse` emprunte le MÊME adaptateur `video()` (veo 3.1 lite, FLF strict AD-1) avec `buildTimelapsePrompt(instances?)` (pur, AD-6) : cadrage « move-in time-lapse », movers qui portent les meubles un par un (furniture_list dérivée des détections 4.6 quand disponible), caméra statique explicite ; `REVEAL_NEGATIVE_PROMPT` inchangé (compatible workers)
+
+**Given** l'implémentation vérifiée (Vitest, tsc, lint verts)
+**When** UNE génération live `timelapse` est exécutée (~0,50 €)
+**Then** le verdict SM-1 (le format chantier absorbe-t-il le morphing ?) est consigné : bon → candidat défaut + feu vert éventuel RoomLapse self-hosted ; mauvais → clôture documentée de la piste vidéo générative fal
+
 ## Epic 5: Édition d'image libre
 
 Un second mode d'usage de RoomReveal, choisi dès l'accueil. Au lieu du parcours vidéo, l'utilisateur édite librement une photo de manière itérative : il dessine une zone sur l'image de travail puis **enlève** un objet (effacement, bria eraser) ou **ajoute** un objet décrit au texte (remplissage génératif masqué, flux-fill — l'objet est généré à l'intérieur de la zone, le reste de l'image reste intact). Chaque retouche produit une nouvelle image qui devient la base de la suivante ; l'utilisateur télécharge l'image quand il est satisfait. Aucun rendu vidéo dans ce mode. L'epic réutilise l'éditeur de masque canvas, l'upload/normalisation canonique, le pattern d'adaptateur pipeline, `download-file` et les overlays d'attente/erreur. Modes strictement séparés (`mode` est un état au-dessus du parcours). Référence de design : `docs/plans/2026-07-13-image-edit-mode-design.md`.

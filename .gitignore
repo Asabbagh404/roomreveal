@@ -42,7 +42,7 @@ yarn-error.log*
 next-env.d.ts
 
 # Local detection service (Python)
-local-detect/.venv/
+local-detect/.venv
 local-detect/__pycache__/
 local-detect/server.log
 **/__pycache__/
