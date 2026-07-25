@@ -23,7 +23,7 @@ describe("exitTrajectory (Story 4.8 — pure exit paths)", () => {
     // center ≈ (900, 400): closest edge is right.
     const traj = exitTrajectory([0.85, 0.4, 0.95, 0.6], W, H);
     const exit = traj[traj.length - 1];
-    expect(exit.x).toBe(W);
+    expect(exit.x).toBe(W - 1); // clamped inside the frame (integer pixels, Kling)
     expect(exit.y).toBe(400);
   });
 
@@ -40,7 +40,7 @@ describe("exitTrajectory (Story 4.8 — pure exit paths)", () => {
     const traj = exitTrajectory([0.4, 0.9, 0.6, 1.0], W, H);
     const exit = traj[traj.length - 1];
     expect(exit.x).toBe(500);
-    expect(exit.y).toBe(H);
+    expect(exit.y).toBe(H - 1); // clamped inside the frame (integer pixels, Kling)
   });
 
   it("is deterministic and points OUTWARD (center then edge, not the reverse)", () => {
@@ -51,6 +51,15 @@ describe("exitTrajectory (Story 4.8 — pure exit paths)", () => {
     // First point is inside the frame, last is on an edge (x === 0 here).
     expect(a[0].x).toBeGreaterThan(0);
     expect(a[a.length - 1].x).toBe(0);
+  });
+
+  it("returns INTEGER pixel coordinates (Kling rejects fractional x/y with 422)", () => {
+    // A box whose center lands on fractional pixels (0.4383… × 1001) must round.
+    const traj = exitTrajectory([0.3123, 0.4571, 0.5645, 0.6231], 1001, 801);
+    for (const p of traj) {
+      expect(Number.isInteger(p.x)).toBe(true);
+      expect(Number.isInteger(p.y)).toBe(true);
+    }
   });
 
   it("resolves a dead-center object to the left edge (tie order left→right→top→bottom)", () => {

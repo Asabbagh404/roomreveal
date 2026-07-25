@@ -22,6 +22,10 @@
  *          whichever frame edge (left / right / top / bottom) its center is
  *          closest to; ties resolve deterministically (left before right,
  *          top before bottom, horizontal before vertical).
+ *          Coordinates are INTEGER pixels: Kling's `dynamic_masks.trajectories`
+ *          schema rejects fractional x/y (422 `int_from_float`), and they are
+ *          clamped inside `[0, width-1] × [0, height-1]` so an edge exit never
+ *          lands one pixel outside the frame.
  */
 export function exitTrajectory(
   box: [number, number, number, number],
@@ -52,8 +56,11 @@ export function exitTrajectory(
     exit = { x: cx, y: height };
   }
 
-  return [
-    { x: cx, y: cy },
-    exit,
-  ];
+  // Kling requires integer pixel coordinates; round and clamp to the frame.
+  const toPixel = (p: { x: number; y: number }) => ({
+    x: Math.min(Math.max(Math.round(p.x), 0), width - 1),
+    y: Math.min(Math.max(Math.round(p.y), 0), height - 1),
+  });
+
+  return [toPixel({ x: cx, y: cy }), toPixel(exit)];
 }
