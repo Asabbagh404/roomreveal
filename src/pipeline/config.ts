@@ -107,11 +107,34 @@ export const LOCAL_DETECT_TIMEOUT_MS = 180_000;
 /**
  * Video backend. Default is `flf` (the veo 3.1 lite first-last-frame path,
  * unchanged). Set `NEXT_PUBLIC_VIDEO_BACKEND=motion-brush` to route the reveal
- * through the Kling Motion Brush reverse-motion path instead (Story 4.8).
+ * through the Kling Motion Brush reverse-motion path (Story 4.8), or
+ * `timelapse` to keep the SAME veo FLF adapter but swap in the construction
+ * move-in time-lapse prompt (Story 4.9 pivot: after the polished-reveal paths
+ * failed live 3/3, absorb the interpolation artifacts via the timelapse format
+ * instead of hiding them). Values outside the whitelist fall back to `flf`.
  * Mirrors DETECT_BACKEND; NEXT_PUBLIC_* is inlined at build.
  */
-export const VIDEO_BACKEND: "flf" | "motion-brush" =
-  process.env.NEXT_PUBLIC_VIDEO_BACKEND === "motion-brush" ? "motion-brush" : "flf";
+/** The video backend union — import this type instead of re-writing the literal. */
+export type VideoBackend = "flf" | "motion-brush" | "timelapse";
+
+const RAW_VIDEO_BACKEND = process.env.NEXT_PUBLIC_VIDEO_BACKEND;
+if (
+  RAW_VIDEO_BACKEND !== undefined &&
+  RAW_VIDEO_BACKEND !== "flf" &&
+  RAW_VIDEO_BACKEND !== "motion-brush" &&
+  RAW_VIDEO_BACKEND !== "timelapse"
+) {
+  // A silent fallback would run a live bench against the WRONG backend — the
+  // only observable difference is video aesthetics, so a typo ("Timelapse",
+  // trailing space) could produce a false verdict. Warn loudly instead.
+  console.warn(
+    `[config] unknown NEXT_PUBLIC_VIDEO_BACKEND "${RAW_VIDEO_BACKEND}" — falling back to "flf"`,
+  );
+}
+export const VIDEO_BACKEND: VideoBackend =
+  RAW_VIDEO_BACKEND === "motion-brush" || RAW_VIDEO_BACKEND === "timelapse"
+    ? RAW_VIDEO_BACKEND
+    : "flf";
 
 /**
  * Local service routes used only by the Motion Brush backend (Story 4.8):

@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildModifyPrompt,
   buildRevealMotionPrompt,
+  buildTimelapsePrompt,
   REVEAL_MOTION_PROMPT,
+  REVEAL_TIMELAPSE_PROMPT,
 } from "./prompts";
 import type { DetectedInstance } from "./types";
 
@@ -211,5 +213,138 @@ describe("buildRevealMotionPrompt (pure builder, Story 4.6)", () => {
     const prompt = buildRevealMotionPrompt(many);
     expect(prompt.length).toBeLessThan(1500);
     expect(prompt).toContain("the smaller pieces settle into place last");
+  });
+});
+
+describe("buildTimelapsePrompt (pure builder, Story 4.9)", () => {
+  /** Every timelapse prompt must carry these clauses (AC 2a–2d), list or not. */
+  function expectMandatoryClauses(prompt: string): void {
+    expect(prompt).toContain("time-lapse"); // move-in time-lapse framing
+    expect(prompt.toLowerCase()).toContain("movers"); // human causal mechanism
+    expect(prompt).toContain("static camera"); // explicit camera constraint…
+    expect(prompt).toContain("no camera movement, no pan, no zoom"); // …in full
+    expect(prompt).toContain("Realistic human motion at time-lapse speed");
+  }
+
+  it("returns the generic timelapse constant when instances is undefined (fallback)", () => {
+    expect(buildTimelapsePrompt(undefined)).toBe(REVEAL_TIMELAPSE_PROMPT);
+    expect(buildTimelapsePrompt()).toBe(REVEAL_TIMELAPSE_PROMPT);
+  });
+
+  it("returns the generic timelapse constant for an empty array (fallback)", () => {
+    expect(buildTimelapsePrompt([])).toBe(REVEAL_TIMELAPSE_PROMPT);
+  });
+
+  it("never falls back to REVEAL_MOTION_PROMPT (a different reveal, not this one)", () => {
+    expect(REVEAL_TIMELAPSE_PROMPT).not.toBe(REVEAL_MOTION_PROMPT);
+    expect(buildTimelapsePrompt()).not.toBe(REVEAL_MOTION_PROMPT);
+  });
+
+  it("carries the mandatory clauses on the generic fallback", () => {
+    expectMandatoryClauses(REVEAL_TIMELAPSE_PROMPT);
+  });
+
+  it("carries the mandatory clauses with instances too", () => {
+    expectMandatoryClauses(
+      buildTimelapsePrompt([instance("cabinet", [0.0, 0.3, 0.3, 0.9], 0.6)]),
+    );
+  });
+
+  it("names at most the 5 largest instances in the furniture list", () => {
+    const six = [
+      instance("cabinet", [0.0, 0.3, 0.3, 0.9], 0.6),
+      instance("refrigerator", [0.8, 0.2, 1.0, 0.9], 0.5),
+      instance("dining table", [0.35, 0.5, 0.65, 0.9], 0.4),
+      instance("oven", [0.7, 0.4, 0.9, 0.9], 0.3),
+      instance("range hood", [0.4, 0.1, 0.6, 0.4], 0.2),
+      instance("kettle", [0.45, 0.5, 0.5, 0.7], 0.01),
+    ];
+    const prompt = buildTimelapsePrompt(six);
+    expect(prompt).toContain("the cabinet");
+    expect(prompt).toContain("the refrigerator");
+    expect(prompt).toContain("the dining table");
+    expect(prompt).toContain("the oven");
+    expect(prompt).toContain("the range hood");
+    expect(prompt).not.toContain("kettle"); // 6th by area → not in the list
+  });
+
+  it("ranks by area, not input order (the biggest objects get named)", () => {
+    const prompt = buildTimelapsePrompt([
+      instance("kettle", [0.45, 0.5, 0.5, 0.7], 0.01),
+      instance("toaster", [0.5, 0.5, 0.55, 0.7], 0.02),
+      instance("pot", [0.4, 0.5, 0.45, 0.7], 0.015),
+      instance("pan", [0.3, 0.5, 0.35, 0.7], 0.012),
+      instance("vase", [0.6, 0.5, 0.65, 0.7], 0.011),
+      instance("cabinet", [0.0, 0.3, 0.4, 0.95], 0.9), // largest, listed last
+    ]);
+    expect(prompt).toContain("the cabinet");
+    expect(prompt).not.toContain("kettle"); // now the smallest of the six
+  });
+
+  it("merges identical labels into one naive-plural entry", () => {
+    const prompt = buildTimelapsePrompt([
+      instance("cabinet", [0.0, 0.3, 0.3, 0.9], 0.6),
+      instance("cabinet", [0.8, 0.3, 1.0, 0.9], 0.2),
+      instance("oven", [0.7, 0.4, 0.9, 0.9], 0.3),
+    ]);
+    expect(prompt).toContain("the cabinets");
+    expect(prompt).not.toContain("the cabinet,"); // merged: no singular leftover
+    expect(prompt).toContain("the oven");
+  });
+
+  it("does not double-pluralize labels already ending in s", () => {
+    const prompt = buildTimelapsePrompt([
+      instance("kitchen utensils", [0.0, 0.3, 0.3, 0.9], 0.3),
+      instance("kitchen utensils", [0.7, 0.3, 1.0, 0.9], 0.2),
+    ]);
+    expect(prompt).toContain("the kitchen utensils");
+    expect(prompt).not.toContain("utensilss");
+  });
+
+  it("pluralizes -f labels correctly (shelf → shelves — a real FURNITURE_CATEGORIES entry)", () => {
+    const prompt = buildTimelapsePrompt([
+      instance("shelf", [0.0, 0.1, 0.3, 0.4], 0.3),
+      instance("shelf", [0.7, 0.1, 1.0, 0.4], 0.2),
+    ]);
+    expect(prompt).toContain("the shelves");
+    expect(prompt).not.toContain("shelfs");
+  });
+
+  it("filters blank labels; all-blank falls back to the generic constant", () => {
+    const mixed = buildTimelapsePrompt([
+      instance("  ", [0.0, 0.3, 0.3, 0.9], 0.6),
+      instance("oven", [0.7, 0.4, 0.9, 0.9], 0.3),
+    ]);
+    expect(mixed).toContain("the oven");
+    expect(mixed).not.toContain("the ,"); // no empty list entry
+
+    expect(
+      buildTimelapsePrompt([instance("", [0.0, 0.3, 0.3, 0.9], 0.6)]),
+    ).toBe(REVEAL_TIMELAPSE_PROMPT);
+  });
+
+  it("does NOT reuse the anti-morphing tail (its early-landing clause contradicts the carry)", () => {
+    expect(REVEAL_TIMELAPSE_PROMPT).not.toContain("rush in early");
+    expect(
+      buildTimelapsePrompt([instance("cabinet", [0.0, 0.3, 0.3, 0.9], 0.6)]),
+    ).not.toContain("rush in early");
+  });
+
+  it("is deterministic (same input → same output)", () => {
+    const instances = [
+      instance("cabinet", [0.0, 0.3, 0.3, 0.9], 0.6),
+      instance("oven", [0.7, 0.4, 0.9, 0.9], 0.3),
+      instance("range hood", [0.4, 0.1, 0.6, 0.4], 0.2),
+    ];
+    expect(buildTimelapsePrompt(instances)).toBe(buildTimelapsePrompt(instances));
+  });
+
+  it("does not mutate the input array (the sort works on a copy)", () => {
+    const instances = [
+      instance("kettle", [0.45, 0.5, 0.5, 0.7], 0.01),
+      instance("cabinet", [0.0, 0.3, 0.4, 0.95], 0.9),
+    ];
+    buildTimelapsePrompt(instances);
+    expect(instances[0].label).toBe("kettle"); // original order untouched
   });
 });

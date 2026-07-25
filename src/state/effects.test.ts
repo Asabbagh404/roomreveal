@@ -19,20 +19,25 @@ const videoFn = vi.fn();
 const videoMotionBrush = vi.fn();
 const detectInstanceMasks = vi.fn();
 const uploadArtifact = vi.fn();
-// Mutable backend flag so the motion-brush tests can flip it without a second
-// module mock (vi.mock is hoisted; the getter reads this at call time).
-let videoBackend: "flf" | "motion-brush" = "flf";
+// Mutable backend flag so the motion-brush/timelapse tests can flip it without
+// a second module mock (vi.mock is hoisted; the getter reads this at call time).
+// The union comes from config.ts (type-only import — erased, so the "@/pipeline"
+// mock below is unaffected) and cannot drift from the real flag.
+let videoBackend: import("@/pipeline/config").VideoBackend = "flf";
 vi.mock("@/pipeline", async () => ({
   DETECT_BACKEND: "fal", // these tests cover the default (fal) orchestration path
   get VIDEO_BACKEND() {
     return videoBackend;
   },
-  // The REAL prompt builder (pure, no adapter behind it): runVideo's fallback
-  // contract — "without instances the prompt IS REVEAL_MOTION_PROMPT" — must be
-  // asserted against the true function, not a stub (Story 4.6).
+  // The REAL prompt builders (pure, no adapter behind them): runVideo's fallback
+  // contracts — "without instances the prompt IS the generic constant" — must be
+  // asserted against the true functions, not stubs (Stories 4.6, 4.9).
   buildRevealMotionPrompt: (
     await vi.importActual<typeof import("@/pipeline/prompts")>("@/pipeline/prompts")
   ).buildRevealMotionPrompt,
+  buildTimelapsePrompt: (
+    await vi.importActual<typeof import("@/pipeline/prompts")>("@/pipeline/prompts")
+  ).buildTimelapsePrompt,
   detect: (...a: unknown[]) => detect(...a),
   detectLocal: (...a: unknown[]) => detectLocal(...a),
   inpaint: (...a: unknown[]) => inpaint(...a),
@@ -67,7 +72,7 @@ vi.mock("@/lib/mask-decode", () => ({
   decodeMaskToBuffer: (...a: unknown[]) => decodeMaskToBuffer(...a),
 }));
 
-import { REVEAL_MOTION_PROMPT } from "@/pipeline/prompts";
+import { REVEAL_MOTION_PROMPT, REVEAL_TIMELAPSE_PROMPT } from "@/pipeline/prompts";
 import { runAutoEmptyRoom, runDetect, runDetectSelect, runEdit, runInpaint, runPointSegment, runValidateMask, runVideo } from "./effects";
 import type { Generation } from "./types";
 
@@ -813,6 +818,112 @@ describe("runVideo (VIDEO_BACKEND=motion-brush, Story 4.8)", () => {
       retryable: true,
       userMessage: "détection ratée",
     });
+    const dispatch = vi.fn();
+
+    await runVideo(videoState(), dispatch, { signal, isStale: notStale });
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "SET_ERROR",
+        error: expect.objectContaining({ step: "video" }),
+      }),
+    );
+  });
+});
+
+describe("runVideo (VIDEO_BACKEND=timelapse, Story 4.9)", () => {
+  it("rides the flf path with the timelapse prompt naming the detected furniture", async () => {
+    videoBackend = "timelapse";
+    videoFn.mockResolvedValue({ reveal: "https://fal/reveal.mp4" });
+    const dispatch = vi.fn();
+    const state = videoState({
+      detectedInstances: [
+        { label: "cabinet", box: [0.0, 0.3, 0.3, 0.9], area: 0.6 },
+        { label: "refrigerator", box: [0.8, 0.2, 1.0, 0.9], area: 0.5 },
+      ],
+    });
+
+    await runVideo(state, dispatch, { signal, isStale: notStale });
+
+    expect(videoFn).toHaveBeenCalledWith(
+      "https://fal/empty.png", // first frame = empty room (FLF strict, AD-1)
+      "https://fal/photo.jpg", // last frame = canonical photo
+      expect.any(String),
+      expect.anything(),
+    );
+    const [, , prompt] = videoFn.mock.calls[0] as [string, string, string];
+    expect(prompt).toContain("time-lapse");
+    expect(prompt).toContain("the cabinet");
+    // Same veo adapter as flf — the motion-brush machinery must stay idle.
+    expect(detectInstanceMasks).not.toHaveBeenCalled();
+    expect(videoMotionBrush).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "VIDEO_SUCCEEDED",
+      revealUrl: "https://fal/reveal.mp4",
+    });
+  });
+
+  it("sends the generic timelapse prompt without instances (never REVEAL_MOTION_PROMPT)", async () => {
+    videoBackend = "timelapse";
+    videoFn.mockResolvedValue({ reveal: "https://fal/reveal.mp4" });
+    const dispatch = vi.fn();
+
+    await runVideo(videoState({ detectedInstances: undefined }), dispatch, {
+      signal,
+      isStale: notStale,
+    });
+
+    const [, , prompt] = videoFn.mock.calls[0] as [string, string, string];
+    expect(prompt).toBe(REVEAL_TIMELAPSE_PROMPT); // strict identity, not toContain
+    expect(prompt).not.toBe(REVEAL_MOTION_PROMPT);
+  });
+
+  it("requires the empty room like flf (guard: no call, no error painted)", async () => {
+    videoBackend = "timelapse";
+    videoFn.mockResolvedValue({ reveal: "u" });
+    const dispatch = vi.fn();
+
+    await runVideo(videoState({ emptyRoom: undefined }), dispatch, { signal, isStale: notStale });
+
+    expect(videoFn).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("treats an EMPTY instances array like undefined (generic timelapse prompt)", async () => {
+    videoBackend = "timelapse";
+    videoFn.mockResolvedValue({ reveal: "https://fal/reveal.mp4" });
+    const dispatch = vi.fn();
+
+    await runVideo(videoState({ detectedInstances: [] }), dispatch, { signal, isStale: notStale });
+
+    const [, , prompt] = videoFn.mock.calls[0] as [string, string, string];
+    expect(prompt).toBe(REVEAL_TIMELAPSE_PROMPT);
+  });
+
+  it("keeps the flf guards: lazy photo upload and queued seed (AC 1)", async () => {
+    videoBackend = "timelapse";
+    uploadArtifact.mockResolvedValue("https://fal/photo.jpg");
+    videoFn.mockResolvedValue({ reveal: "https://fal/reveal.mp4" });
+    const dispatch = vi.fn();
+    const state = videoState({
+      originalPhoto: {
+        blob: new Blob(["p"]),
+        detectionBlob: new Blob(["d"]),
+        width: 1024,
+        height: 768,
+      },
+    });
+
+    await runVideo(state, dispatch, { signal, isStale: notStale });
+
+    expect(uploadArtifact).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenCalledWith({ type: "PHOTO_UPLOADED", falUrl: "https://fal/photo.jpg" });
+    expect(dispatch).toHaveBeenCalledWith({ type: "SET_WAIT_PHASE", phase: "queued" });
+  });
+
+  it("keeps the flf error path: a veo failure paints a retryable video StepError", async () => {
+    videoBackend = "timelapse";
+    videoFn.mockRejectedValue({ step: "video", retryable: true, userMessage: "…" });
     const dispatch = vi.fn();
 
     await runVideo(videoState(), dispatch, { signal, isStale: notStale });

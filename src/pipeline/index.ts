@@ -10,7 +10,7 @@ export { autoEmptyRoom } from "./empty-room-auto";
 export { editRemove, editAdd, editModify } from "./edit";
 export { resolveTextureUrl } from "./texture-upload";
 export { findTexture } from "./textures";
-export { buildModifyPrompt, buildRevealMotionPrompt } from "./prompts";
+export { buildModifyPrompt, buildRevealMotionPrompt, buildTimelapsePrompt } from "./prompts";
 export { pointSegment, boxSegment } from "./point-segment";
 export type { SelectBox } from "./point-segment";
 export { pointSegmentLocal, boxSegmentLocal } from "./point-segment-local";

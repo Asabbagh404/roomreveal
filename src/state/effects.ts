@@ -1,4 +1,4 @@
-import { DETECT_BACKEND, VIDEO_BACKEND, autoEmptyRoom, buildModifyPrompt, buildRevealMotionPrompt, detect, detectInstanceMasks, detectLocal, editAdd, editModify, editRemove, findTexture, inpaint, pointSegment, pointSegmentLocal, resolveTextureUrl, uploadArtifact, video, videoMotionBrush } from "@/pipeline";
+import { DETECT_BACKEND, VIDEO_BACKEND, autoEmptyRoom, buildModifyPrompt, buildRevealMotionPrompt, buildTimelapsePrompt, detect, detectInstanceMasks, detectLocal, editAdd, editModify, editRemove, findTexture, inpaint, pointSegment, pointSegmentLocal, resolveTextureUrl, uploadArtifact, video, videoMotionBrush } from "@/pipeline";
 import type { EditResult } from "@/pipeline";
 import { encodeMaskPng } from "@/lib/mask-encode";
 import { isBufferEmpty } from "@/lib/mask-buffer";
@@ -420,13 +420,17 @@ export async function runDetectSelect(
 }
 
 /**
- * Generates the Révélation (AD-12): runs the FLF video adapter on the empty room
- * (first frame) + canonical photo (last frame) and stores the MP4 URL
- * (VIDEO_SUCCEEDED). Both inputs are already fal URLs — emptyRoom is the inpaint
- * output, and the photo's fal URL was memoized when inpaint uploaded it (Story
- * 3.1); the lazy upload here is only a safety net. A result is dropped without
- * dispatch once the run is dead (epoch moved on — e.g. a Pièce vide regeneration,
- * Story 3.3 — or signal aborted). Failures become a retryable SET_ERROR (AD-8).
+ * Generates the Révélation (AD-12), branching on VIDEO_BACKEND: `flf` (default)
+ * and `timelapse` run the FLF video adapter on the empty room (first frame) +
+ * canonical photo (last frame) — they differ only in the motion prompt builder
+ * (Story 4.6 vs the Story 4.9 construction-timelapse framing) — while
+ * `motion-brush` (Story 4.8) drives per-object masks + trajectories through
+ * Kling and needs only the photo. The MP4 URL is stored via VIDEO_SUCCEEDED.
+ * FLF inputs are already fal URLs — emptyRoom is the inpaint output, and the
+ * photo's fal URL was memoized when inpaint uploaded it (Story 3.1); the lazy
+ * upload here is only a safety net. A result is dropped without dispatch once
+ * the run is dead (epoch moved on — e.g. a Pièce vide regeneration, Story 3.3 —
+ * or signal aborted). Failures become a retryable SET_ERROR (AD-8).
  * AR-LAYERS: the pipeline call lives here, never in the component.
  */
 export async function runVideo(
@@ -504,8 +508,13 @@ export async function runVideo(
 
     // Motion prompt (Story 4.6, AD-12): built HERE from the detected instances
     // — the adapter stays passive. Without instances (fal backend, 204, older
-    // Generation) the builder returns REVEAL_MOTION_PROMPT itself, unchanged.
-    const motionPrompt = buildRevealMotionPrompt(state.detectedInstances);
+    // Generation) the builder returns its generic constant, unchanged. The
+    // timelapse backend (Story 4.9) swaps ONLY the builder — same veo FLF
+    // adapter, same guards, same negative prompt.
+    const motionPrompt =
+      VIDEO_BACKEND === "timelapse"
+        ? buildTimelapsePrompt(state.detectedInstances)
+        : buildRevealMotionPrompt(state.detectedInstances);
     const result = await video(emptyRoomUrl, photoUrl, motionPrompt, { signal, onPhase });
     if (dead()) return; // superseded or cancelled — drop the result
 

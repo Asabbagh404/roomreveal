@@ -222,6 +222,82 @@ export function buildRevealMotionPrompt(instances?: readonly DetectedInstance[])
 }
 
 /**
+ * Shared halves of the timelapse prompt (Story 4.9): the furniture list slots
+ * between them when instances are available. Mandatory clauses live here —
+ * move-in time-lapse framing, human movers as the causal mechanism, an explicit
+ * static-camera constraint (the shared REVEAL_NEGATIVE_PROMPT has no camera
+ * terms), and realistic human motion at time-lapse speed.
+ */
+const TIMELAPSE_PROMPT_OPENING =
+  "Construction move-in time-lapse in a finished empty room, completely static camera on a fixed tripod, no camera movement, no pan, no zoom. Movers and decorators in work clothes walk in and out of the frame carrying furniture, placing each piece one by one at time-lapse speed";
+const TIMELAPSE_PROMPT_CLOSING =
+  "adjusting positions until the room is fully furnished and styled, then they exit the frame leaving the finished interior. Realistic human motion at time-lapse speed, natural daylight.";
+
+/**
+ * Generic timelapse reveal prompt (Story 4.9) — the fallback when no detected
+ * instances are available (fal detection backend, 204, an older Generation,
+ * empty array): the full movers/static-camera framing without a furniture list.
+ */
+export const REVEAL_TIMELAPSE_PROMPT = `${TIMELAPSE_PROMPT_OPENING}, ${TIMELAPSE_PROMPT_CLOSING}`;
+
+/**
+ * Construction-timelapse FLF prompt (Story 4.9, AD-6). Rationale: the polished
+ * reveal paths failed live 3/3 (pure FLF morphs structurally, the deterministic
+ * composite was rejected, Motion Brush deforms instead of translating) because
+ * a "clean" reveal EXPOSES the interpolation artifacts. This format ABSORBS
+ * them instead of hiding them: human movers give the model a causal mechanism
+ * to introduce each piece (nothing grows out of thin air), the workers' bodies
+ * occlude the transitions, and the viewer EXPECTS visual chaos on a move-in
+ * time-lapse — chaos reads as "work in progress", not as a glitch.
+ * Pure and deterministic — no state, no clock, no randomness.
+ *
+ * Furniture list heuristic mirrors buildRevealMotionPrompt: sort by area desc,
+ * name the top 5, merge identical labels with a plural; labels are the
+ * Grounding DINO texts as-is (English, lowercase — never re-mapped). Blank
+ * labels (a malformed service payload) are filtered out rather than producing
+ * "the , the oven". No entry directions here — the movers carry the pieces in,
+ * the model picks the paths.
+ * REVEAL_ANTI_MORPHING_TAIL is deliberately NOT reused: its "rush in early /
+ * landed well before the last frame" clause contradicts the one-by-one carry
+ * spread across the whole clip. Calibration note: the shared
+ * REVEAL_NEGATIVE_PROMPT bans "ghosting, semi-transparent objects, blur" —
+ * which is how humans render in real time-lapse footage. If the movers come
+ * out mangled live, a dedicated timelapse negative is the first knob to try
+ * (needs the negative to become a video() input). [À calibrer live]
+ */
+export function buildTimelapsePrompt(instances?: readonly DetectedInstance[]): string {
+  if (instances === undefined || instances.length === 0) {
+    return REVEAL_TIMELAPSE_PROMPT;
+  }
+
+  const byAreaDesc = [...instances].sort((a, b) => b.area - a.area);
+  const named = byAreaDesc.slice(0, 5).filter(({ label }) => label.trim() !== "");
+  if (named.length === 0) return REVEAL_TIMELAPSE_PROMPT;
+
+  // Merge identical labels into one plural entry ("cabinet" → "cabinets",
+  // "shelf" → "shelves", already-plural labels kept as-is). The -f/-fe → -ves
+  // rule covers the only irregular in FURNITURE_CATEGORIES ("shelf") — the
+  // reveal builder above still writes "shelfs", left as-is (flf zero-regression).
+  const counts = new Map<string, number>();
+  for (const { label } of named) {
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  const furnitureList = [...counts.entries()]
+    .map(([label, count]) => (count > 1 ? `the ${pluralize(label)}` : `the ${label}`))
+    .join(", ");
+
+  return `${TIMELAPSE_PROMPT_OPENING} — ${furnitureList} — ${TIMELAPSE_PROMPT_CLOSING}`;
+}
+
+/** English plural for GDINO furniture labels: -s kept, -f/-fe → -ves, else +s. */
+function pluralize(label: string): string {
+  if (label.endsWith("s")) return label;
+  if (label.endsWith("fe")) return `${label.slice(0, -2)}ves`;
+  if (label.endsWith("f")) return `${label.slice(0, -1)}ves`;
+  return `${label}s`;
+}
+
+/**
  * Free-edit « Modifier » prompt (texture bank). Composes an instruction that
  * (a) bounds the change to the masked element, preserving its shape, lighting
  * and perspective, (b) folds in the chosen texture's descriptive prompt (paired

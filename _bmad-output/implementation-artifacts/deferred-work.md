@@ -17,3 +17,9 @@ Pre-existing or out-of-scope issues surfaced by bmad-dev-auto review passes.
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-8-revelation-par-motion-brush-reverse-motion.md`
   summary: `/reverse` charge toutes les frames en mémoire (décodées ×2) sans plafond de taille/durée ni auth — un gros MP4 (ou un upload malveillant sur cette route localhost) peut faire OOM le service qui héberge aussi SAM/GDINO.
   evidence: `server.py /reverse` fait `list(iio.imiter(...))` puis `reversed(...)`. Une garde de base (frames vides/indécodable → 422) est en place, mais pas de cap taille/résolution/durée. Service dev-only localhost mono-utilisateur → impact borné ; durcir (cap + content-type) si jamais exposé.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-9-revelation-timelapse-chantier.md`
+  summary: Négatif dédié timelapse — REVEAL_NEGATIVE_PROMPT bannit « ghosting, semi-transparent objects, blur », or c'est l'apparence normale d'humains en time-lapse ; si les movers sortent déformés en live, il faut un négatif propre à ce backend, ce qui exige que le négatif devienne un input de video().
+  evidence: prompts.ts REVEAL_NEGATIVE_PROMPT vs le prompt positif « Realistic human motion at time-lapse speed » ; video.ts importe le négatif en dur — conflit relevé indépendamment par les deux reviewers 4.9.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-9-revelation-timelapse-chantier.md`
+  summary: Le console.log({ prompt }) diagnostic de buildRevealMotionPrompt (prompts.ts:220, Story 4.6) tire à chaque reveal flf en production — à retirer ou passer derrière un flag debug.
+  evidence: prompts.ts:220, présent depuis la 4.6 ; interdit par les règles projet (« no console.log in production code »), toléré jusqu'ici car hors périmètre des stories suivantes.
